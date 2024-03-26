@@ -33,7 +33,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: surround
+    SyncSource: currPoints
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -127,16 +127,16 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 10
-            Min Value: -10
+            Max Value: 91.54178619384766
+            Min Value: -7.780467987060547
             Value: true
           Axis: Z
           Channel Name: intensity
           Class: rviz/PointCloud2
           Color: 255; 0; 0
-          Color Transformer: FlatColor
+          Color Transformer: AxisColor
           Decay Time: 0
-          Enabled: false
+          Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -145,13 +145,13 @@ Visualization Manager:
           Queue Size: 10
           Selectable: true
           Size (Pixels): 3
-          Size (m): 0.10000000149011612
-          Style: Flat Squares
+          Size (m): 0.05000000074505806
+          Style: Spheres
           Topic: /Laser_map
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: false
+          Value: true
       Enabled: true
       Name: mapping
     - Class: rviz/Group
@@ -316,25 +316,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 157.25376892089844
+      Distance: 134.42657470703125
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 8.602002143859863
-        Y: 36.28913879394531
-        Z: -35.57991409301758
+        X: 6.064639568328857
+        Y: -25.717205047607422
+        Z: -8.827542304992676
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 0.6697971820831299
       Target Frame: body
       Value: Orbit (rviz)
-      Yaw: 2.5504016876220703
+      Yaw: 2.2053980827331543
     Saved: ~
 Window Geometry:
   Displays:
@@ -353,4 +353,4 @@ Window Geometry:
     collapsed: true
   Width: 1389
   X: 531
-  Y: 103
+  Y: 73

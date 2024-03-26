@@ -49,6 +49,7 @@
 #include <so3_math.h>
 #include <common_lib.h>
 #include "IMU_Processing.hpp"
+#include <livox_ros_driver/CustomMsg.h>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree_impl.h>
 
@@ -121,6 +122,7 @@ public:
 public:
     mutex mtx_buffer_;
 
+    int key_frame_count_ = 0;
     const float mov_thresh_ = 1.0f;
     float det_range_ = 300.0f;
 
@@ -129,6 +131,9 @@ public:
     double lidar_end_time_ = 0;
     double last_timestamp_lidar_ = 0;
     double last_timestamp_imu_ = -1.0;
+
+    double timediff_lidar_wrt_imu_ = 0.0; //雷达时间与imu时间差
+    bool timediff_set_flg_ = false;       // 时间同步flag，false表示未进行时间同步，true表示已经进行过时间同步
 
     // IMU Params
     double gyr_cov_ = 0.1;
@@ -253,6 +258,7 @@ private:
     void mapFovUpdate();    // 在拿到eskf前馈结果后，动态调整地图区域，防止地图过大而内存溢出，类似LOAM中提取局部地图的方法
     void mapIncrement();         // 地图的增量更新，主要完成对ikd-tree的地图建立
 
+    void livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg);
     void standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
     void imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in);
     bool syncPackages(MeasureGroup &meas);
