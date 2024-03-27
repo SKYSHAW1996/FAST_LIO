@@ -117,6 +117,7 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     double epsi[23] = {0.001};
     fill(epsi, epsi+23, 0.001);
     kf_.init_dyn_share(get_f, df_dx, df_dw, H_Share_Model, NUM_MAX_ITERATIONS, epsi);
+    // predict_kf_.init_dyn_share(get_f, df_dx, df_dw, H_Share_Model, NUM_MAX_ITERATIONS, epsi);
 
     /*** ROS subscribe initialization ***/
     sub_pcl_ = nh_.subscribe(lid_topic, 200000, &FastLIO::standardPclCallback, this);
@@ -131,6 +132,8 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
 
 //------------------------------------------------------------------------------------------------------
     sync_packages_timer_ = nh_.createTimer(::ros::Duration(0.005), &FastLIO::processDataPackages, this);
+    data_publisher_timer_ = nh_.createTimer(::ros::Duration(0.05), &FastLIO::publishData, this);
+
     signal(SIGINT, SigHandle);
 }
 
@@ -138,127 +141,103 @@ FastLIO::~FastLIO() {}
 
 void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
 {
-    if(syncPackages(data_measures_)) 
-        {
-            if (first_scan_flg_)
-            {
-                first_lidar_time_ = data_measures_.lidar_beg_time;
-                p_imu_->first_lidar_time_ = first_lidar_time_;
-                first_scan_flg_ = false;
-                return;
-            }
-
-            double t0,t1,t2,t3,t4,t5,match_start, solve_start, svd_time;
-
-            kdtree_search_time_ = 0.0;
-            solve_time_ = 0;
-            solve_const_H_time_ = 0;
-            svd_time   = 0;
-            t0 = omp_get_wtime();
-
-            p_imu_->Process(data_measures_, kf_, feats_undistort_);
-            state_point_ = kf_.get_x();
-            pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
-
-            if (feats_undistort_->empty() || (feats_undistort_ == NULL))
-            {
-                ROS_WARN("No point, skip this scan!\n");
-                return;
-            }
-
-            ekf_inited_flg_ = (data_measures_.lidar_beg_time - first_lidar_time_) < INIT_TIME ? \
-                            false : true;
-            /*** Segment the map in lidar FOV ***/
-            mapFovUpdate();
-
-            /*** downsample the feature points in a scan ***/
-            ds_filter_surf_.setInputCloud(feats_undistort_);
-            ds_filter_surf_.filter(*feats_down_body_);
-            t1 = omp_get_wtime();
-            feats_down_size_ = feats_down_body_->points.size();
-
-            /*** initialize the map kdtree ***/
-            if(ikdtree_->Root_Node == nullptr)
-            {
-                if(feats_down_size_ > 5)
-                {
-                    ikdtree_->set_downsample_param(filter_size_map_min_);
-                    feats_down_world_->resize(feats_down_size_);
-                    for(int i = 0; i < feats_down_size_; i++)
-                    {
-                        pointBodyToWorld(&(feats_down_body_->points[i]), &(feats_down_world_->points[i]));
-                    }
-                    ikdtree_->Build(feats_down_world_->points);
-                }
-                return;
-            }
-            int featsFromMapNum = ikdtree_->validnum();
-            kdtree_size_st_ = ikdtree_->size();
-            // cout<<"[ mapping ]: In num: "<<feats_undistort_->points.size()<<" downsamp "<<feats_down_size_<<" Map num: "<<featsFromMapNum<<"effect num:"<<effct_feat_num_<<endl;
-            // cout<<"kdtree_size_st_ "<<kdtree_size_st_<<endl;
-
-            /*** ICP and iterated Kalman filter update ***/
-            if (feats_down_size_ < 5)
-            {
-                ROS_WARN("No point, skip this scan!\n");
-                return;
-            }
-            
-            normvec_->resize(feats_down_size_);
-            feats_down_world_->resize(feats_down_size_);
-
-            V3D ext_euler = SO3ToEuler(state_point_.offset_R_L_I);
-
-            if(1) // If you need to see map point, change to "if(1)"
-            {
-                PointVector ().swap(ikdtree_->PCL_Storage);
-                ikdtree_->flatten(ikdtree_->Root_Node, ikdtree_->PCL_Storage, NOT_RECORD);
-                feats_from_map_->clear();
-                feats_from_map_->points = ikdtree_->PCL_Storage;
-            }
-
-            // pointSearchInd_surf_.resize(feats_down_size_);
-            nearest_points_.resize(feats_down_size_);
-            int  rematch_num = 0;
-            bool nearest_search_en = true; //
-
-            t2 = omp_get_wtime();
-            
-            /*** iterated state estimation ***/
-            double t_update_start = omp_get_wtime();
-            double solve_H_time = 0;
-            kf_.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
-            state_point_ = kf_.get_x();
-            euler_cur_ = SO3ToEuler(state_point_.rot);
-            pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
-            geo_quat_.x = state_point_.rot.coeffs()[0];
-            geo_quat_.y = state_point_.rot.coeffs()[1];
-            geo_quat_.z = state_point_.rot.coeffs()[2];
-            geo_quat_.w = state_point_.rot.coeffs()[3];
-
-            double t_update_end = omp_get_wtime();
-
-            /******* Publish odometry *******/
-            publishOdometry(odom_pub_);
-
-            /*** add the feature points to map kdtree ***/
-            t3 = omp_get_wtime();
-            mapIncrement();
-            t5 = omp_get_wtime();
-            
-            /******* Publish points *******/
-            if (path_en_)                         publishPath(path_pub_);
-            if (scan_pub_en_ || pcd_save_en_) {
-                if(++keyframe_pulse_cout_ > 10){
-                    publishFrameWorld(cloud_full_pub_);
-                    keyframe_pulse_cout_ = 0;
-                }
-            }
-            if (scan_pub_en_ && scan_body_pub_en_) publishFrameBody(body_cloud_full_pub_);
-            // publishEffectWorld(cloud_effect_pub_);
-            publishMap(map_cloud_pub_);
-
+    if(syncPackages(data_measures_)) {
+        if (first_scan_flg_) {
+            first_lidar_time_ = data_measures_.lidar_beg_time;
+            p_imu_->first_lidar_time_ = first_lidar_time_;
+            first_scan_flg_ = false;
+            return;
         }
+
+        // if(p_imu_->imu_need_init_) {
+        //     p_imu_->Process(data_measures_, predict_kf_, feats_undistort_);
+        // }
+        p_imu_->Process(data_measures_, kf_, feats_undistort_);
+        
+        if (feats_undistort_->empty() || (feats_undistort_ == NULL)) {
+            ROS_WARN("No point, skip this scan!\n");
+            return;
+        }
+        ekf_inited_flg_ = (data_measures_.lidar_beg_time - first_lidar_time_) < INIT_TIME ? false : true;
+
+        /*** downsample the feature points in a scan ***/
+        ds_filter_surf_.setInputCloud(feats_undistort_);
+        ds_filter_surf_.filter(*feats_down_body_);
+        feats_down_size_ = feats_down_body_->points.size();
+
+        /*** initialize the map kdtree ***/
+        if(ikdtree_->Root_Node == nullptr) {
+            if(feats_down_size_ > 5) {
+                state_point_ = kf_.get_x();
+                pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
+
+                ikdtree_->set_downsample_param(filter_size_map_min_);
+                feats_down_world_->resize(feats_down_size_);
+                for(int i = 0; i < feats_down_size_; i++){
+                    pointBodyToWorld(&(feats_down_body_->points[i]), &(feats_down_world_->points[i]));
+                }
+                ikdtree_->Build(feats_down_world_->points);
+            }
+            return;
+        }
+
+        if (feats_down_size_ < 5) {
+            ROS_WARN("No point, skip this scan!\n");
+            return;
+        }
+        normvec_->resize(feats_down_size_);
+        feats_down_world_->resize(feats_down_size_);
+        nearest_points_.resize(feats_down_size_);
+
+        if(1) // If you need to see map point, change to "if(1)"
+        {
+            PointVector ().swap(ikdtree_->PCL_Storage);
+            ikdtree_->flatten(ikdtree_->Root_Node, ikdtree_->PCL_Storage, NOT_RECORD);
+            feats_from_map_->clear();
+            feats_from_map_->points = ikdtree_->PCL_Storage;
+        }
+        // pointSearchInd_surf_.resize(feats_down_size_);
+        
+        /*** iterated state estimation ***/
+        double solve_H_time = 0;
+        //迭代卡尔曼滤波更新，更新地图信息
+        kf_.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
+        // predict_kf_.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
+
+        state_point_ = kf_.get_x();
+        euler_cur_ = SO3ToEuler(state_point_.rot);
+        pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
+        geo_quat_.x = state_point_.rot.coeffs()[0];
+        geo_quat_.y = state_point_.rot.coeffs()[1];
+        geo_quat_.z = state_point_.rot.coeffs()[2];
+        geo_quat_.w = state_point_.rot.coeffs()[3];
+
+        /*** Segment the map in lidar FOV ***/
+        mapFovUpdate();
+        /*** add the feature points to map kdtree ***/
+        mapIncrement();
+        
+        /******* Publish odometry *******/
+        publishOdometry(odom_pub_);
+
+    }
+}
+
+void FastLIO::publishData(const ::ros::TimerEvent& timer_event)
+{
+    /******* Publish Path *******/
+    if (path_en_) publishPath(path_pub_);
+
+    /******* Publish points *******/
+    if (scan_pub_en_ || pcd_save_en_) {
+        if(++keyframe_pulse_cout_ > 5){
+            publishFrameWorld(cloud_full_pub_);
+            keyframe_pulse_cout_ = 0;
+        }
+    }
+    if (scan_pub_en_ && scan_body_pub_en_) publishFrameBody(body_cloud_full_pub_);
+    // publishEffectWorld(cloud_effect_pub_);
+    publishMap(map_cloud_pub_);
 }
 
 void FastLIO::savePcd()
@@ -499,29 +478,39 @@ void FastLIO::standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg)
 void FastLIO::imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in) 
 {
     publish_count_ ++;
-    // cout<<"IMU got at: "<<msg_in->header.stamp.toSec()<<endl;
     sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
 
     msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu_);
-    if (abs(time_diff_lidar_to_imu_) > 0.1 && time_sync_en_)
-    {
+    if (abs(time_diff_lidar_to_imu_) > 0.1 && time_sync_en_) {
         msg->header.stamp = \
         ros::Time().fromSec(time_diff_lidar_to_imu_ + msg_in->header.stamp.toSec());
     }
 
     double timestamp = msg->header.stamp.toSec();
+    if(timestamp < last_timestamp_lidar_) {
+        ROS_WARN("newest imu is older than lidar timestamp");
+        return;
+    }
 
     mtx_buffer_.lock();
-
-    if (timestamp < last_timestamp_imu_)
-    {
+    if (timestamp < last_timestamp_imu_) {
         ROS_WARN("imu loop back, clear buffer");
         imu_buffer_.clear();
     }
 
     last_timestamp_imu_ = timestamp;
-
     imu_buffer_.push_back(msg);
+    // MeasureGroup tmp_imu_measure;
+    // tmp_imu_measure.imu.push_back(msg);
+    // p_imu_->ImuPredict(tmp_imu_measure, predict_kf_);
+    // predict_state_point_ = predict_kf_.get_x();
+    // predict_geo_quat_.x = predict_state_point_.rot.coeffs()[0];
+    // predict_geo_quat_.y = predict_state_point_.rot.coeffs()[1];
+    // predict_geo_quat_.z = predict_state_point_.rot.coeffs()[2];
+    // predict_geo_quat_.w = predict_state_point_.rot.coeffs()[3];
+    // /******* Publish odometry *******/
+    // publishOdometry(odom_pub_);
+
     mtx_buffer_.unlock();
     sig_buffer_.notify_all();
 }
@@ -532,9 +521,6 @@ bool FastLIO::syncPackages(MeasureGroup &meas)
     if (lidar_buffer_.empty() || imu_buffer_.empty()) {
         return false;
     }
-
-    // ROS_INFO(">>>>>>>>>> lidar_buffer_ size: %d", lidar_buffer_.size());
-    // ROS_INFO(">>>>>>>>>> imu_buffer_ size: %d", imu_buffer_.size());
 
     /*** push a lidar scan ***/
     if(!lidar_pushed_flg_)
@@ -562,9 +548,7 @@ bool FastLIO::syncPackages(MeasureGroup &meas)
         lidar_pushed_flg_ = true;
     }
 
-    if (last_timestamp_imu_ < lidar_end_time_)
-    {
-        // ROS_WARN("last_timestamp_imu_ < lidar_end_time_...");
+    if (last_timestamp_imu_ < lidar_end_time_) {
         return false;
     }
 
@@ -696,7 +680,6 @@ void FastLIO::setPoseStamp(T & out)
     out.pose.orientation.y = geo_quat_.y;
     out.pose.orientation.z = geo_quat_.z;
     out.pose.orientation.w = geo_quat_.w;
-    
 }
 
 void FastLIO::publishOdometry(const ros::Publisher & odom_pub_)
@@ -707,6 +690,7 @@ void FastLIO::publishOdometry(const ros::Publisher & odom_pub_)
     setPoseStamp(odom_aft_mapped_.pose);
     odom_pub_.publish(odom_aft_mapped_);
     auto P = kf_.get_P();
+
     for (int i = 0; i < 6; i ++)
     {
         int k = i < 3 ? i + 3 : i - 3;

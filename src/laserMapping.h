@@ -101,8 +101,7 @@ public:
     // /*** Time Log Variables ***/
     int scan_count_ = 0;
     int publish_count_ = 0;
-    double kdtree_incremental_time_ = 0.0, kdtree_search_time_ = 0.0, kdtree_delete_time_ = 0.0;
-    double solve_const_H_time_ = 0;
+    double kdtree_incremental_time_ = 0.0, kdtree_delete_time_ = 0.0;
     int    kdtree_size_st_ = 0, kdtree_size_end_ = 0, add_point_size_ = 0, kdtree_delete_counter_ = 0;
     bool   runtime_pos_log_ = false, pcd_save_en_ = false, time_sync_en_ = false;
     bool path_en_ = true;
@@ -115,7 +114,6 @@ public:
     double total_residual_ = 0.0;
     int effct_feat_num_ = 0;
     int feats_down_size_ = 0;
-    double solve_time_ = 0;
     bool extrinsic_est_en_ = true;
 
 public:
@@ -160,8 +158,12 @@ public:
     int NUM_MAX_ITERATIONS = 0;
     MeasureGroup data_measures_;
     esekfom::esekf<state_ikfom, 12, input_ikfom> kf_;    // 状态，噪声维度，输入
+    // esekfom::esekf<state_ikfom, 12, input_ikfom> predict_kf_;    // 状态，噪声维度，输入
     state_ikfom state_point_;                            // 状态
     vect3 pos_lidar_;                                      // world系下lidar坐标
+
+    // state_ikfom predict_state_point_;
+    // geometry_msgs::Quaternion predict_geo_quat_;
 
     /*** Some Data Containers ***/
     deque<double>                     time_buffer_;
@@ -174,8 +176,8 @@ public:
     int pcd_save_interval_ = -1;
     int pcd_index_ = 0;
 
-    bool   lidar_pushed_flg_ = false, first_scan_flg_ = true, ekf_inited_flg_ = false;
-    bool   scan_pub_en_ = false, dense_pub_en_ = false, scan_body_pub_en_ = false;
+    bool  lidar_pushed_flg_ = false, first_scan_flg_ = true, ekf_inited_flg_ = false;
+    bool  scan_pub_en_ = false, dense_pub_en_ = false, scan_body_pub_en_ = false;
 
     // // NOT USED PARAMS
     double fov_deg = 0; // not used
@@ -196,7 +198,7 @@ public:
     V3D Lidar_T_wrt_IMU_{Zero3d};
     M3D Lidar_R_wrt_IMU_{Eye3d};
 
-    PointCloudXYZI::Ptr feats_from_map_;       //提取地图中的特征点，IKD-tree获得
+    PointCloudXYZI::Ptr feats_from_map_;     //提取地图中的特征点，IKD-tree获得
     PointCloudXYZI::Ptr feats_undistort_;    //去畸变的特征
     PointCloudXYZI::Ptr feats_array_;        // ikd-tree中，map需要移除的点云序列，用于可视化
 
@@ -210,6 +212,7 @@ public:
 
     ros::NodeHandle nh_;
     ros::Timer sync_packages_timer_;
+    ros::Timer data_publisher_timer_;
 
     ros::Subscriber sub_pcl_;
     ros::Subscriber sub_imu_;
@@ -235,6 +238,7 @@ public:
 
 private:
     void processDataPackages(const ::ros::TimerEvent& timer_event);
+    void publishData(const ::ros::TimerEvent& timer_event);
 
     void dumpStateToLog(FILE *fp);
 

@@ -15,8 +15,8 @@ preprocess:
 
 mapping:
     acc_cov: 0.1
-    gyr_cov: 0.1
-    b_acc_cov: 0.0001
+    gyr_cov: 0.01
+    b_acc_cov: 0.001
     b_gyr_cov: 0.0001
     fov_degree:    180
     det_range:     100.0          # 用以判断机器人本体位置与地图cube边界的距离，小于1.5倍该阈值则更新ikdtree

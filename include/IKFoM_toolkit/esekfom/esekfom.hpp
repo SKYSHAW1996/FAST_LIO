@@ -1652,8 +1652,6 @@ public:
 			x_.boxminus(dx, x_propagated);
 			dx_new = dx;
 			
-			
-			
 			P_ = P_propagated;
 			
 			Matrix<scalar_type, 3, 3> res_temp_SO3;
