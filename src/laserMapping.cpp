@@ -60,6 +60,7 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     nh_.param<string>("map_file_path",map_file_path,"");
     nh_.param<string>("common/lid_topic",lid_topic,"/livox/lidar");
     nh_.param<string>("common/imu_topic", imu_topic,"/imu/data");
+    nh_.param<double>("common/delay_time", delay_time_, 0.0);
     nh_.param<bool>("common/time_sync_en_", time_sync_en_, false);
     nh_.param<double>("common/time_offset_lidar_to_imu", time_diff_lidar_to_imu_, 0.0);
     
@@ -93,8 +94,12 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     path_.header.stamp    = ros::Time::now();
     path_.header.frame_id ="camera_init";
 
+    points_world_.reset(new PointCloudXYZI());
+    accumulated_cloud_.reset(new PointCloudXYZI());
     feats_from_map_.reset(new PointCloudXYZI());
+
     feats_undistort_.reset(new PointCloudXYZI());
+    feats_undistort_world_.reset(new PointCloudXYZI());
 
     pcl_wait_pub_.reset(new PointCloudXYZI());
     pcl_wait_save_.reset(new PointCloudXYZI());
@@ -131,7 +136,7 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     path_pub_ = nh_.advertise<nav_msgs::Path>("/path", 1);
 
 //------------------------------------------------------------------------------------------------------
-    sync_packages_timer_ = nh_.createTimer(::ros::Duration(0.005), &FastLIO::processDataPackages, this);
+    sync_packages_timer_ = nh_.createTimer(::ros::Duration(0.001), &FastLIO::processDataPackages, this);
     data_publisher_timer_ = nh_.createTimer(::ros::Duration(0.05), &FastLIO::publishData, this);
 
     signal(SIGINT, SigHandle);
@@ -164,6 +169,7 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
         ds_filter_surf_.setInputCloud(feats_undistort_);
         ds_filter_surf_.filter(*feats_down_body_);
         feats_down_size_ = feats_down_body_->points.size();
+        feats_origin_size_ = feats_undistort_->points.size();
 
         /*** initialize the map kdtree ***/
         if(ikdtree_->Root_Node == nullptr) {
@@ -171,20 +177,22 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
                 state_point_ = kf_.get_x();
                 pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
 
-                ikdtree_->set_downsample_param(filter_size_map_min_);
+                ikdtree_->set_downsample_param(0.05);
                 feats_down_world_->resize(feats_down_size_);
+                feats_undistort_world_->resize(feats_origin_size_);
+                // 初始化时用 feats_undistort_， 不进行降采样
                 for(int i = 0; i < feats_down_size_; i++){
                     pointBodyToWorld(&(feats_down_body_->points[i]), &(feats_down_world_->points[i]));
                 }
-                ikdtree_->Build(feats_down_world_->points);
+                for(int i = 0; i < feats_origin_size_; i++){
+                    pointBodyToWorld(&(feats_undistort_->points[i]), &(feats_undistort_world_->points[i]));
+                }
+                ikdtree_->Build(feats_undistort_world_->points);
+                ikdtree_->set_downsample_param(filter_size_map_min_);
             }
             return;
         }
 
-        if (feats_down_size_ < 5) {
-            ROS_WARN("No point, skip this scan!\n");
-            return;
-        }
         normvec_->resize(feats_down_size_);
         feats_down_world_->resize(feats_down_size_);
         nearest_points_.resize(feats_down_size_);
@@ -196,7 +204,6 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
             feats_from_map_->clear();
             feats_from_map_->points = ikdtree_->PCL_Storage;
         }
-        // pointSearchInd_surf_.resize(feats_down_size_);
         
         /*** iterated state estimation ***/
         double solve_H_time = 0;
@@ -212,10 +219,10 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
         geo_quat_.z = state_point_.rot.coeffs()[2];
         geo_quat_.w = state_point_.rot.coeffs()[3];
 
-        /*** Segment the map in lidar FOV ***/
-        mapFovUpdate();
         /*** add the feature points to map kdtree ***/
         mapIncrement();
+        /*** Segment the map in lidar FOV ***/
+        mapFovUpdate();
         
         /******* Publish odometry *******/
         publishOdometry(odom_pub_);
@@ -450,25 +457,37 @@ void FastLIO::mapIncrement()
     int add_point_size_1 = ikdtree_->Add_Points(PointToAdd, true);
     int add_point_size_2 = ikdtree_->Add_Points(PointNoNeedDownsample, false); 
     add_point_size_ = add_point_size_1 + add_point_size_2;
-    // std::cout << "kdtree_incremental add_point_size_: " << add_point_size_ << std::endl;
     kdtree_incremental_time_ = omp_get_wtime() - st_time;
+
+    addPointToPcl(points_world_, PointToAdd, PointNoNeedDownsample);
+}
+
+void FastLIO::addPointToPcl(PointCloudXYZI::Ptr pcl_points, PointVector PointToAdd, PointVector PointNoNeedDownsample) 
+{
+    for(auto cloudTemp: PointToAdd) {
+        pcl_points->points.push_back(cloudTemp);
+    }
+
+    for(auto cloudTemp: PointNoNeedDownsample) {
+        pcl_points->points.push_back(cloudTemp);
+    }
 }
 
 void FastLIO::standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg) 
 {
     mtx_buffer_.lock();
     scan_count_ ++;
-    double preprocess_start_time = omp_get_wtime();
     if (msg->header.stamp.toSec() < last_timestamp_lidar_)
     {
         ROS_ERROR("lidar loop back, clear buffer");
         lidar_buffer_.clear();
+        time_buffer_.clear();
     }
 
     PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
     p_pre_->process(msg, ptr);
-    lidar_buffer_.push_back(ptr);
-    time_buffer_.push_back(msg->header.stamp.toSec());
+    lidar_buffer_.emplace_back(ptr);
+    time_buffer_.emplace_back(msg->header.stamp.toSec());
     last_timestamp_lidar_ = msg->header.stamp.toSec();
 
     mtx_buffer_.unlock();
@@ -479,12 +498,6 @@ void FastLIO::imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in)
 {
     publish_count_ ++;
     sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
-
-    msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu_);
-    if (abs(time_diff_lidar_to_imu_) > 0.1 && time_sync_en_) {
-        msg->header.stamp = \
-        ros::Time().fromSec(time_diff_lidar_to_imu_ + msg_in->header.stamp.toSec());
-    }
 
     double timestamp = msg->header.stamp.toSec();
     if(timestamp < last_timestamp_lidar_) {
@@ -499,7 +512,8 @@ void FastLIO::imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in)
     }
 
     last_timestamp_imu_ = timestamp;
-    imu_buffer_.push_back(msg);
+    // cout << "timestamp imu:  "<< last_timestamp_imu_ <<endl;
+    imu_buffer_.emplace_back(msg);
     // MeasureGroup tmp_imu_measure;
     // tmp_imu_measure.imu.push_back(msg);
     // p_imu_->ImuPredict(tmp_imu_measure, predict_kf_);
@@ -522,43 +536,35 @@ bool FastLIO::syncPackages(MeasureGroup &meas)
         return false;
     }
 
+    if (imu_buffer_.back()->header.stamp.toSec() - lidar_end_time_ < delay_time_) {
+        return false;
+    }
+
     /*** push a lidar scan ***/
     if(!lidar_pushed_flg_)
     {
         meas.lidar = lidar_buffer_.front();
         meas.lidar_beg_time = time_buffer_.front();
-        if (meas.lidar->points.size() <= 1) // time too little
-        {
-            lidar_end_time_ = meas.lidar_beg_time + lidar_mean_scantime_;
-            ROS_WARN("Too few input point cloud!\n");
-        }
-        else if (meas.lidar->points.back().curvature / double(1000) < 0.5 * lidar_mean_scantime_)
-        {
-            lidar_end_time_ = meas.lidar_beg_time + lidar_mean_scantime_;
-        }
-        else
-        {
-            scan_num_ ++;
-            lidar_end_time_ = meas.lidar_beg_time + meas.lidar->points.back().curvature / double(1000);
-            lidar_mean_scantime_ += (meas.lidar->points.back().curvature / double(1000) - lidar_mean_scantime_) / scan_num_;
-        }
 
+        lidar_end_time_ = meas.lidar_beg_time + 
+                    std::abs(meas.lidar->points.back().curvature - meas.lidar->points.front().curvature) / double(1000);
         meas.lidar_end_time_ = lidar_end_time_;
 
         lidar_pushed_flg_ = true;
     }
 
     if (last_timestamp_imu_ < lidar_end_time_) {
+        cout << "lidar_end_time_ - last_timestamp_imu_: " << lidar_end_time_ - last_timestamp_imu_ <<endl;
         return false;
     }
 
     /*** push imu data, and pop from imu buffer ***/
     double imu_time = imu_buffer_.front()->header.stamp.toSec();
     meas.imu.clear();
-    while ((!imu_buffer_.empty()) && (imu_time < lidar_end_time_))
+    while ((!imu_buffer_.empty()) && (imu_time < meas.lidar_end_time_))
     {
         imu_time = imu_buffer_.front()->header.stamp.toSec();
-        if(imu_time > lidar_end_time_) break;
+        if(imu_time > meas.lidar_end_time_) break;
         meas.imu.push_back(imu_buffer_.front());
         imu_buffer_.pop_front();
     }

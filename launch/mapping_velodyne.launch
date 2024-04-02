@@ -6,10 +6,10 @@
     <rosparam command="load" file="$(find fast_lio)/config/velodyne.yaml" />
 
     <param name="feature_extract_enable" type="bool" value="0"/>
-    <param name="point_filter_num" type="int" value="4"/>
-    <param name="max_iteration" type="int" value="3" />
+    <param name="point_filter_num" type="int" value="5"/>
+    <param name="max_iteration" type="int" value="10" />
     <param name="filter_size_surf" type="double" value="0.5" />
-    <param name="filter_size_map" type="double" value="0.5" />
+    <param name="filter_size_map" type="double" value="0.2" />
     
     <!-- cube_side_length 需要比 det_range 2倍大一些就好，越大越不容易触发删除-->
     <param name="cube_side_length" type="double" value="250" />  

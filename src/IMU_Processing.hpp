@@ -29,7 +29,7 @@
 
 /// *************Preconfiguration
 
-#define MAX_INI_COUNT (10)
+#define MAX_INI_COUNT (50)
 
 const bool time_list(PointType &x, PointType &y) {return (x.curvature < y.curvature);};
 
@@ -310,6 +310,7 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
 
   /*** undistort each lidar point (backward propagation) ***/
   if (pcl_out.points.begin() == pcl_out.points.end()) return;
+  auto pcl_cur_begin = pcl_out.points.begin()->curvature;
   auto it_pcl = pcl_out.points.end() - 1;
   for (auto it_kp = IMUpose.end() - 1; it_kp != IMUpose.begin(); it_kp--)
   {
@@ -322,9 +323,9 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
     acc_imu<<VEC_FROM_ARRAY(tail->acc);
     angvel_avr<<VEC_FROM_ARRAY(tail->gyr);
 
-    for(; it_pcl->curvature / double(1000) > head->offset_time; it_pcl --)
+    for(; (it_pcl->curvature - pcl_cur_begin) / double(1000) > head->offset_time; it_pcl --)
     {
-      dt = it_pcl->curvature / double(1000) - head->offset_time;
+      dt = (it_pcl->curvature - pcl_cur_begin) / double(1000) - head->offset_time;
 
       /* Transform to the 'end' frame, using only the rotation
        * Note: Compensation direction is INVERSE of Frame's moving direction

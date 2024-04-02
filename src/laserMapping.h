@@ -122,6 +122,7 @@ public:
     const float mov_thresh_ = 1.0f;
     float det_range_ = 300.0f;
 
+    double delay_time_ = 0.0;
     double time_diff_lidar_to_imu_ = 0.0;
     double first_lidar_time_ = 0.0;
     double lidar_end_time_ = 0;
@@ -198,9 +199,15 @@ public:
     V3D Lidar_T_wrt_IMU_{Zero3d};
     M3D Lidar_R_wrt_IMU_{Eye3d};
 
-    PointCloudXYZI::Ptr feats_from_map_;     //提取地图中的特征点，IKD-tree获得
-    PointCloudXYZI::Ptr feats_undistort_;    //去畸变的特征
-    PointCloudXYZI::Ptr feats_array_;        // ikd-tree中，map需要移除的点云序列，用于可视化
+    std::vector<PointCloudXYZI::Ptr> map_points_;
+    PointCloudXYZI::Ptr points_world_;
+    PointCloudXYZI::Ptr accumulated_cloud_;
+    PointCloudXYZI::Ptr feats_from_map_;            //提取地图中的特征点，初版是由IKD-tree获得
+
+    PointCloudXYZI::Ptr feats_array_;               // ikd-tree中，map需要移除的点云序列，用于可视化
+    PointCloudXYZI::Ptr feats_undistort_;           //去畸变的特征
+    PointCloudXYZI::Ptr feats_undistort_world_;     //畸变纠正后的单帧点云，w系
+    int feats_origin_size_ = 0;
 
     PointCloudXYZI::Ptr pcl_wait_pub_;
     PointCloudXYZI::Ptr pcl_wait_save_;
@@ -256,6 +263,7 @@ private:
     void pointsCacheCollect();    // 通过ikdtree，得到被剔除的点
     void mapFovUpdate();    // 在拿到eskf前馈结果后，动态调整地图区域，防止地图过大而内存溢出，类似LOAM中提取局部地图的方法
     void mapIncrement();         // 地图的增量更新，主要完成对ikd-tree的地图建立
+    void addPointToPcl(PointCloudXYZI::Ptr pcl_points, PointVector PointToAdd, PointVector PointNoNeedDownsample);
 
     void standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
     void imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in);
