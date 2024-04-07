@@ -42,7 +42,9 @@
 #include <fstream>
 #include <csignal>
 #include <unistd.h>
-#include <Python.h>
+// #include <Python.h>
+#include <algorithm>
+#include <tr1/unordered_map>
 
 #include <Eigen/Core>
 
@@ -69,6 +71,45 @@
 
 using namespace ikdtreeNS;
 template class KD_TREE<pcl::PointXYZ>;
+
+namespace fast_lio{
+struct voxel {
+  voxel() = default;
+
+  voxel(short x, short y, short z) : x(x), y(y), z(z) {}
+
+  bool operator==(const voxel& vox) const {
+    return x == vox.x && y == vox.y && z == vox.z;
+  }
+
+  inline bool operator<(const voxel& vox) const {
+    return x < vox.x || (x == vox.x && y < vox.y) ||
+           (x == vox.x && y == vox.y && z < vox.z);
+  }
+
+  inline static voxel coordinates(const Eigen::Vector3d& point,
+                                  double voxel_size) {
+    return {short(point.x() / voxel_size), short(point.y() / voxel_size),
+            short(point.z() / voxel_size)};
+  }
+
+  short x;
+  short y;
+  short z;
+};
+} // end of namespace fast_lio
+
+namespace std {
+template <>
+struct hash<fast_lio::voxel> {
+  std::size_t operator()(const fast_lio::voxel& vox) const {
+    const size_t kP1 = 73856093;
+    const size_t kP2 = 19349669;
+    const size_t kP3 = 83492791;
+    return vox.x * kP1 + vox.y * kP2 + vox.z * kP3;
+  }
+};
+}  // namespace std
 
 namespace fast_lio{
 
@@ -118,12 +159,14 @@ public:
 
 public:
     mutex mtx_buffer_;
+    mutex map_point_mutex_;
 
     const float mov_thresh_ = 1.0f;
     float det_range_ = 300.0f;
 
     double delay_time_ = 0.0;
     double time_diff_lidar_to_imu_ = 0.0;
+    double result_map_resolution_ = 0.05;
     double first_lidar_time_ = 0.0;
     double lidar_end_time_ = 0;
     double last_timestamp_lidar_ = 0;
@@ -220,6 +263,7 @@ public:
     ros::NodeHandle nh_;
     ros::Timer sync_packages_timer_;
     ros::Timer data_publisher_timer_;
+    ros::Timer map_refine_timer_;
 
     ros::Subscriber sub_pcl_;
     ros::Subscriber sub_imu_;
@@ -246,6 +290,7 @@ public:
 private:
     void processDataPackages(const ::ros::TimerEvent& timer_event);
     void publishData(const ::ros::TimerEvent& timer_event);
+    void mapCloudRefine(const ::ros::TimerEvent& timer_event);
 
     void dumpStateToLog(FILE *fp);
 
@@ -263,7 +308,8 @@ private:
     void pointsCacheCollect();    // 通过ikdtree，得到被剔除的点
     void mapFovUpdate();    // 在拿到eskf前馈结果后，动态调整地图区域，防止地图过大而内存溢出，类似LOAM中提取局部地图的方法
     void mapIncrement();         // 地图的增量更新，主要完成对ikd-tree的地图建立
-    void addPointToPcl(PointCloudXYZI::Ptr pcl_points, PointVector PointToAdd, PointVector PointNoNeedDownsample);
+    void addPointToPcl(PointCloudXYZI::Ptr& pcl_points, const PointVector& PointToAdd, const PointVector& PointNoNeedDownsample);
+    void subSampleFrame(PointCloudXYZI::Ptr& frame, const double size_voxel);
 
     void standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
     void imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in);

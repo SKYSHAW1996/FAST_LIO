@@ -7,6 +7,7 @@ common:
     time_sync_en_: false         # ONLY turn on when external time synchronization is really not possible
     time_offset_lidar_to_imu: 0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
                                   # This param will take effect no matter what time_sync_en_ is. So if the time offset is not known exactly, please set as 0.0
+    result_map_resolution: 0.05
 
 preprocess:
     lidar_type: 2                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 4 for pandar
@@ -37,7 +38,7 @@ publish:
     path_en_:  true
     scan_publish_en:  true       # false: close all the point cloud output
     dense_publish_en: false       # false: low down the points number in a global-frame point clouds scan.
-    scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
+    scan_bodyframe_pub_en: false  # true: output the point cloud scans in IMU-body-frame
 
 pcd_save:
     pcd_save_en_: false

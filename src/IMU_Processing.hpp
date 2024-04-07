@@ -245,7 +245,7 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
   IMUpose.push_back(set_pose6d(0.0, acc_s_last, angvel_last, imu_state.vel, imu_state.pos, imu_state.rot.toRotationMatrix()));
 
   /*** forward propagation at each imu point ***/
-  V3D angvel_avr, acc_avr, acc_imu, vel_imu, pos_imu;
+  V3D angvel_avr, acc_avr, acc_imu, vel_imu, pos_imu, pos_imu_tail;
   M3D R_imu;
 
   double dt = 0;
@@ -320,12 +320,15 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
     // cout<<"head imu acc: "<<acc_imu.transpose()<<endl;
     vel_imu<<VEC_FROM_ARRAY(head->vel);
     pos_imu<<VEC_FROM_ARRAY(head->pos);
+    pos_imu_tail<<VEC_FROM_ARRAY(tail->pos);
     acc_imu<<VEC_FROM_ARRAY(tail->acc);
     angvel_avr<<VEC_FROM_ARRAY(tail->gyr);
 
     for(; (it_pcl->curvature - pcl_cur_begin) / double(1000) > head->offset_time; it_pcl --)
     {
+      double head_tail_offset_time = tail->offset_time - head->offset_time;
       dt = (it_pcl->curvature - pcl_cur_begin) / double(1000) - head->offset_time;
+      double s = dt / head_tail_offset_time;
 
       /* Transform to the 'end' frame, using only the rotation
        * Note: Compensation direction is INVERSE of Frame's moving direction
@@ -334,7 +337,8 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
       M3D R_i(R_imu * Exp(angvel_avr, dt));
       
       V3D P_i(it_pcl->x, it_pcl->y, it_pcl->z);
-      V3D T_ei(pos_imu + vel_imu * dt + 0.5 * acc_imu * dt * dt - imu_state.pos);
+      // V3D T_ei(pos_imu + vel_imu * dt + 0.5 * acc_imu * dt * dt - imu_state.pos);
+      V3D T_ei(pos_imu * (1 - s) + pos_imu_tail * s - imu_state.pos);
       V3D P_compensate = imu_state.offset_R_L_I.conjugate() * (imu_state.rot.conjugate() * (R_i * (imu_state.offset_R_L_I * P_i + imu_state.offset_T_L_I) + T_ei) - imu_state.offset_T_L_I);// not accurate!
       
       // save Undistorted points and their rotation
