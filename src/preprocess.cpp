@@ -52,16 +52,16 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
   switch (time_unit)
   {
     case SEC:
-      time_unit_scale = 1.e3f;
-      break;
-    case MS:
       time_unit_scale = 1.f;
       break;
+    case MS:
+      time_unit_scale = 1.e3f;
+      break;
     case US:
-      time_unit_scale = 1.e-3f;
+      time_unit_scale = 1.e6f;
       break;
     case NS:
-      time_unit_scale = 1.e-6f;
+      time_unit_scale = 1.e9f;
       break;
     default:
       time_unit_scale = 1.f;
@@ -85,6 +85,10 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
   default:
     printf("Error LiDAR Type");
     break;
+  }
+  if(0 == pl_surf.points.size()) {
+    std::cout << "0 == pl_surf.points.size()" << std::endl;
+    return;
   }
   *pcl_out = pl_surf;
 }
@@ -195,7 +199,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
   pcl::fromROSMsg(*msg, pl_orig);
   int plsize = pl_orig.size();
   pl_corn.reserve(plsize);
-  pl_surf.reserve(plsize);
+  // pl_surf.reserve(plsize);
   if (feature_enabled)
   {
     for (int i = 0; i < N_SCANS; i++)
@@ -223,7 +227,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       if (yaw_angle <= -180.0)
         yaw_angle += 360.0;
 
-      added_pt.curvature = pl_orig.points[i].t * time_unit_scale;
+      added_pt.curvature = pl_orig.points[i].t / time_unit_scale;
       if(pl_orig.points[i].ring < N_SCANS)
       {
         pl_buff[pl_orig.points[i].ring].push_back(added_pt);
@@ -272,7 +276,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       added_pt.normal_x = 0;
       added_pt.normal_y = 0;
       added_pt.normal_z = 0;
-      added_pt.curvature = pl_orig.points[i].t * time_unit_scale; // curvature unit: ms
+      added_pt.curvature = pl_orig.points[i].t / time_unit_scale; // curvature unit: s
 
       pl_surf.points.push_back(added_pt);
     }
@@ -291,14 +295,14 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     pcl::fromROSMsg(*msg, pl_orig);
     int plsize = pl_orig.points.size();
     if (plsize == 0) return;
-    pl_surf.reserve(plsize);
+    // pl_surf.reserve(plsize);
 
     cloudNeighborPicked.clear();
     cloudNeighborPicked.resize(plsize, 0);
     markOccludedPoints(pl_orig);
 
     /*** These variables only works when no point timestamps given ***/
-    double omega_l = 0.361 * SCAN_RATE;       // scan angular velocity
+    double omega_l = 361 * SCAN_RATE;       // scan angular velocity
     std::vector<bool> is_first(N_SCANS,true);
     std::vector<double> yaw_fp(N_SCANS, 0.0);      // yaw of first scan point
     std::vector<float> yaw_last(N_SCANS, 0.0);   // yaw of last scan point
@@ -343,7 +347,8 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       added_pt.y = pl_orig.points[i].y;
       added_pt.z = pl_orig.points[i].z;
       added_pt.intensity = pl_orig.points[i].intensity;
-      added_pt.curvature = pl_orig.points[i].time * time_unit_scale;  // curvature unit: ms, tosec（）的话需要除1000
+      added_pt.curvature = pl_orig.points[i].time / time_unit_scale;  // curvature unit: s
+      // std::cout << "added_pt.curvature: " << added_pt.curvature << std::endl;
 
       if (!given_offset_time)
       {
@@ -388,9 +393,9 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       return (point_1.curvature < point_2.curvature);
     };
     std::sort(pl_surf.points.begin(), pl_surf.points.end(), time_list_pl);
-    while ( (pl_surf.points[plsize - 1].curvature - pl_surf.points[0].curvature) / double(1000) >=
+    while ( pl_surf.points.back().curvature - pl_surf.points[0].curvature >
           0.1) {
-      plsize--;
+      // plsize--;
       pl_surf.points.pop_back();
     }
     
@@ -406,14 +411,14 @@ void Preprocess::pandar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     pcl::fromROSMsg(*msg, pl_orig);
     int plsize = pl_orig.points.size();
     if (plsize == 0) return;
-    pl_surf.reserve(plsize);
+    // pl_surf.reserve(plsize);
 
     cloudNeighborPicked.clear();
     cloudNeighborPicked.resize(plsize, 0);
     markOccludedPoints(pl_orig);
 
     /*** These variables only works when no point timestamps given ***/
-    double omega_l = 0.361 * SCAN_RATE;       // scan angular velocity
+    double omega_l = 361 * SCAN_RATE;       // scan angular velocity
     std::vector<bool> is_first(N_SCANS,true);
     std::vector<double> yaw_fp(N_SCANS, 0.0);      // yaw of first scan point
     std::vector<float> yaw_last(N_SCANS, 0.0);   // yaw of last scan point
@@ -458,7 +463,7 @@ void Preprocess::pandar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       added_pt.y = pl_orig.points[i].y;
       added_pt.z = pl_orig.points[i].z;
       added_pt.intensity = pl_orig.points[i].intensity;
-      added_pt.curvature = pl_orig.points[i].timestamp * time_unit_scale;  
+      added_pt.curvature = pl_orig.points[i].timestamp / time_unit_scale;  
 
       if (!given_offset_time)
       {
@@ -503,9 +508,9 @@ void Preprocess::pandar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       return (point_1.curvature < point_2.curvature);
     };
     std::sort(pl_surf.points.begin(), pl_surf.points.end(), time_list_pl);
-    while ( (pl_surf.points[plsize - 1].curvature - pl_surf.points[0].curvature) / double(1000) >=
+    while ( (pl_surf.points.back().curvature - pl_surf.points[0].curvature) >=
           0.1) {
-      plsize--;
+      // plsize--;
       pl_surf.points.pop_back();
     }
 }

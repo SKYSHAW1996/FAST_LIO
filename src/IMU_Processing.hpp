@@ -324,10 +324,10 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
     acc_imu<<VEC_FROM_ARRAY(tail->acc);
     angvel_avr<<VEC_FROM_ARRAY(tail->gyr);
 
-    for(; (it_pcl->curvature - pcl_cur_begin) / double(1000) > head->offset_time; it_pcl --)
+    for(; (it_pcl->curvature - pcl_cur_begin) > head->offset_time; it_pcl --)
     {
       double head_tail_offset_time = tail->offset_time - head->offset_time;
-      dt = (it_pcl->curvature - pcl_cur_begin) / double(1000) - head->offset_time;
+      dt = (it_pcl->curvature - pcl_cur_begin) - head->offset_time;
       double s = dt / head_tail_offset_time;
 
       /* Transform to the 'end' frame, using only the rotation

@@ -9,7 +9,7 @@
     <param name="point_filter_num" type="int" value="5"/>
     <param name="max_iteration" type="int" value="10" />
     <param name="filter_size_surf" type="double" value="0.3" />
-    <param name="filter_size_map" type="double" value="0.2" />
+    <param name="filter_size_map" type="double" value="0.1" />
     
     <!-- cube_side_length 需要比 det_range 2倍大一些就好，越大越不容易触发删除-->
     <param name="cube_side_length" type="double" value="250" />  

@@ -65,21 +65,27 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     nh_.param<bool>("common/time_sync_en_", time_sync_en_, false);
     nh_.param<double>("common/time_offset_lidar_to_imu", time_diff_lidar_to_imu_, 0.0);
     
-    nh_.param<double>("filter_size_surf",filter_size_surf_min_,0.5);
-    nh_.param<double>("filter_size_map",filter_size_map_min_,0.5);
-    nh_.param<double>("cube_side_length",localmap_cube_len_,200);
+    nh_.param<double>("motion_filter/trans_threshold", trans_threshold_, 0.1);
+    nh_.param<double>("motion_filter/rot_threshold", rot_threshold_, 1.5);
+    nh_.param<double>("motion_filter/time_threshold", time_threshold_, 5.0);
+
     nh_.param<float>("mapping/det_range",det_range_,300.f);
     nh_.param<double>("mapping/fov_degree",fov_deg,180);
     nh_.param<double>("mapping/gyr_cov",gyr_cov_,0.1);
     nh_.param<double>("mapping/acc_cov",acc_cov_,0.1);
     nh_.param<double>("mapping/b_gyr_cov",b_gyr_cov_,0.0001);
     nh_.param<double>("mapping/b_acc_cov",b_acc_cov_,0.0001);
+
     nh_.param<double>("preprocess/blind", p_pre_->blind, 0.01);
     nh_.param<double>("preprocess/max_range", p_pre_->max_range, 150);
     nh_.param<int>("preprocess/lidar_type", p_pre_->lidar_type, AVIA);
     nh_.param<int>("preprocess/scan_line", p_pre_->N_SCANS, 16);
     nh_.param<int>("preprocess/timestamp_unit", p_pre_->time_unit, US);
     nh_.param<int>("preprocess/scan_rate", p_pre_->SCAN_RATE, 10);
+
+    nh_.param<double>("filter_size_surf",filter_size_surf_min_,0.5);
+    nh_.param<double>("filter_size_map",filter_size_map_min_,0.5);
+    nh_.param<double>("cube_side_length",localmap_cube_len_,200);
     nh_.param<int>("point_filter_num", p_pre_->point_filter_num, 2);
     nh_.param<bool>("feature_extract_enable", p_pre_->feature_enabled, false);
     nh_.param<bool>("runtime_pos_log_enable", runtime_pos_log_, 0);
@@ -179,6 +185,7 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
         if(ikdtree_->Root_Node == nullptr) {
             if(feats_down_size_ > 5) {
                 state_point_ = kf_.get_x();
+                last_state_point_ = kf_.get_x();
                 pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
 
                 ikdtree_->set_downsample_param(0.05);
@@ -223,15 +230,42 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
         geo_quat_.z = state_point_.rot.coeffs()[2];
         geo_quat_.w = state_point_.rot.coeffs()[3];
 
-        if (scan_count_ % 10 == 0) {
+        if (scan_count_ < 20 || compareStates()) {
             /*** add the feature points to map kdtree ***/
             mapIncrement();
+            last_state_point_ = state_point_;
+            last_lidar_end_time_ = lidar_end_time_;
         }
         
         /******* Publish odometry *******/
         publishOdometry(odom_pub_);
 
     }
+}
+
+bool FastLIO::compareStates() 
+{
+    // 计算两个四元数之间的delta角度
+    Eigen::Quaterniond last_quaternion;
+    last_quaternion.x() = last_state_point_.rot.coeffs()[0];
+    last_quaternion.y() = last_state_point_.rot.coeffs()[1];
+    last_quaternion.z() = last_state_point_.rot.coeffs()[2];
+    last_quaternion.w() = last_state_point_.rot.coeffs()[3];
+    Eigen::Quaterniond cur_quaternion;
+    cur_quaternion.x() = geo_quat_.x;
+    cur_quaternion.y() = geo_quat_.y;
+    cur_quaternion.z() = geo_quat_.z;
+    cur_quaternion.w() = geo_quat_.w;
+    Eigen::Quaterniond dq = cur_quaternion * last_quaternion.conjugate();
+    dq.normalize();
+
+    // 将delta角度转为角度制
+    double deltaR = 2 * acos(dq.w()) * 180 / M_PI;
+    // 计算位移差异
+    auto deltaT = state_point_.pos - last_state_point_.pos;
+
+    return deltaT.norm() > trans_threshold_ || abs(deltaR) > rot_threshold_ 
+                || (lidar_end_time_ - last_lidar_end_time_ > time_threshold_);
 }
 
 void FastLIO::publishData(const ::ros::TimerEvent& timer_event)
@@ -598,7 +632,7 @@ bool FastLIO::syncPackages(MeasureGroup &meas)
         meas.lidar_beg_time = time_buffer_.front();
 
         lidar_end_time_ = meas.lidar_beg_time + 
-                    std::abs(meas.lidar->points.back().curvature - meas.lidar->points.front().curvature) / double(1000);
+                    std::abs(meas.lidar->points.back().curvature - meas.lidar->points.front().curvature);
         meas.lidar_end_time_ = lidar_end_time_;
 
         lidar_pushed_flg_ = true;

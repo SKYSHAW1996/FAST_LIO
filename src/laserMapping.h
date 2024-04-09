@@ -130,6 +130,7 @@ private:
 
 public:
     condition_variable sig_buffer_;
+    std::vector<std::shared_ptr<KD_TREE<PointType>>> ikdtree_vec_;
     std::shared_ptr<KD_TREE<PointType>> ikdtree_ = std::make_shared<KD_TREE<PointType>>();
     vector<PointVector>  nearest_points_;    //每个点的最近点序列
 
@@ -169,6 +170,7 @@ public:
     double result_map_resolution_ = 0.05;
     double first_lidar_time_ = 0.0;
     double lidar_end_time_ = 0;
+    double last_lidar_end_time_ = 0;
     double last_timestamp_lidar_ = 0;
     double last_timestamp_imu_ = -1.0;
 
@@ -177,6 +179,11 @@ public:
     double acc_cov_ = 0.1;
     double b_gyr_cov_ = 0.0001;
     double b_acc_cov_ = 0.0001;
+
+    // Motion Filter
+    double trans_threshold_ = 0.1;
+    double rot_threshold_ = 1.5;
+    double time_threshold_ = 5.0;
 
     // LiDAR Preprocess DS Params  
     pcl::VoxelGrid<PointType> ds_filter_surf_;
@@ -204,6 +211,7 @@ public:
     esekfom::esekf<state_ikfom, 12, input_ikfom> kf_;    // 状态，噪声维度，输入
     // esekfom::esekf<state_ikfom, 12, input_ikfom> predict_kf_;    // 状态，噪声维度，输入
     state_ikfom state_point_;                            // 状态
+    state_ikfom last_state_point_;                            // 状态
     vect3 pos_lidar_;                                      // world系下lidar坐标
 
     // state_ikfom predict_state_point_;
@@ -303,6 +311,7 @@ private:
     // 含有RGB的点云从body系转到world系
     void RGBpointBodyToWorld(PointType const * const pi, PointType * const po);
     void RGBpointBodyLidarToIMU(PointType const * const pi, PointType * const po);
+    bool compareStates();
 
     // iKDTree Methods
     void pointsCacheCollect();    // 通过ikdtree，得到被剔除的点
@@ -368,7 +377,7 @@ void H_Share_Model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
             /** Find the closest surfaces in the map **/
             fast_lio_instance->ikdtree_->Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
             //如果最近邻的点数小于NUM_MATCH_POINTS或者最近邻的点到特征点的距离大于5m，则认为该点不是有效点
-            fast_lio_instance->point_selected_surf_[i] = points_near.size() < NUM_MATCH_POINTS ? false : pointSearchSqDis[NUM_MATCH_POINTS - 1] > 5 ? false : true;
+            fast_lio_instance->point_selected_surf_[i] = points_near.size() < NUM_MATCH_POINTS ? false : pointSearchSqDis[NUM_MATCH_POINTS - 1] > 2 ? false : true;
         }
 
         if (!fast_lio_instance->point_selected_surf_[i]) continue;
