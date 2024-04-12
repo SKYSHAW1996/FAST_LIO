@@ -88,7 +88,7 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
   }
   if(0 == pl_surf.points.size()) {
     std::cout << "0 == pl_surf.points.size()" << std::endl;
-    return;
+    // return;
   }
   *pcl_out = pl_surf;
 }
@@ -347,8 +347,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       added_pt.y = pl_orig.points[i].y;
       added_pt.z = pl_orig.points[i].z;
       added_pt.intensity = pl_orig.points[i].intensity;
-      added_pt.curvature = pl_orig.points[i].time / time_unit_scale;  // curvature unit: s
-      // std::cout << "added_pt.curvature: " << added_pt.curvature << std::endl;
+      added_pt.curvature = (pl_orig.points[i].time - pl_orig.points[0].time) / time_unit_scale;  // curvature unit: s
 
       if (!given_offset_time)
       {
@@ -393,11 +392,11 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       return (point_1.curvature < point_2.curvature);
     };
     std::sort(pl_surf.points.begin(), pl_surf.points.end(), time_list_pl);
-    while ( pl_surf.points.back().curvature - pl_surf.points[0].curvature >
-          0.1) {
-      // plsize--;
+    while ( pl_surf.points.back().curvature >= 0.1) {
       pl_surf.points.pop_back();
     }
+
+    std::cout << "pl_surf.points.back().curvature: " << pl_surf.points.back().curvature << std::endl;
     
 }
 
@@ -463,7 +462,7 @@ void Preprocess::pandar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       added_pt.y = pl_orig.points[i].y;
       added_pt.z = pl_orig.points[i].z;
       added_pt.intensity = pl_orig.points[i].intensity;
-      added_pt.curvature = pl_orig.points[i].timestamp / time_unit_scale;  
+      added_pt.curvature = (pl_orig.points[i].timestamp - pl_orig.points[0].timestamp) / time_unit_scale;  
 
       if (!given_offset_time)
       {
@@ -508,11 +507,10 @@ void Preprocess::pandar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       return (point_1.curvature < point_2.curvature);
     };
     std::sort(pl_surf.points.begin(), pl_surf.points.end(), time_list_pl);
-    while ( (pl_surf.points.back().curvature - pl_surf.points[0].curvature) >=
-          0.1) {
-      // plsize--;
+    while (pl_surf.points.back().curvature >= 0.1) {
       pl_surf.points.pop_back();
     }
+    std::cout << "pl_surf.points.back().curvature: " << pl_surf.points.back().curvature << std::endl;
 }
 
 //相邻两点距光心差距大则设为不进行特征提取的状态，差距过大，周围点也设置为不进行特征提取的状态

@@ -579,7 +579,7 @@ void FastLIO::standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg)
     scan_count_ ++;
     if (msg->header.stamp.toSec() < last_timestamp_lidar_)
     {
-        ROS_ERROR("lidar loop back, clear buffer");
+        ROS_WARN("lidar loop back, clear buffer");
         lidar_buffer_.clear();
         time_buffer_.clear();
     }
@@ -640,17 +640,20 @@ bool FastLIO::syncPackages(MeasureGroup &meas)
         return false;
     }
 
-    /*** push a lidar scan ***/
-    meas.lidar = lidar_buffer_.front();
-    meas.lidar_beg_time = time_buffer_.front();
-    lidar_end_time_ = meas.lidar_beg_time + 
-                std::abs(meas.lidar->points.back().curvature - meas.lidar->points.front().curvature);
-    meas.lidar_end_time_ = lidar_end_time_;
-
-    // if (last_timestamp_imu_ < lidar_end_time_) {
-    //     cout << "lidar_end_time_ - last_timestamp_imu_: " << lidar_end_time_ - last_timestamp_imu_ <<endl;
-    //     return false;
-    // }
+    if (0 == lidar_buffer_.front()->points.size()) {
+        /*** push a empty lidar scan ***/
+        meas.lidar = lidar_buffer_.front();
+        meas.lidar_beg_time = time_buffer_.front();
+        lidar_end_time_ = meas.lidar_beg_time + 0.1;
+        meas.lidar_end_time_ = lidar_end_time_;
+    } else {
+        /*** push a lidar scan ***/
+        meas.lidar = lidar_buffer_.front();
+        meas.lidar_beg_time = time_buffer_.front();
+        lidar_end_time_ = meas.lidar_beg_time + 
+                    std::abs(meas.lidar->points.back().curvature - meas.lidar->points.front().curvature);
+        meas.lidar_end_time_ = lidar_end_time_;
+    }
 
     /*** push imu data, and pop from imu buffer ***/
     double imu_time = imu_buffer_.front()->header.stamp.toSec();

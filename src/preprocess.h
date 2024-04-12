@@ -40,9 +40,9 @@ struct orgtype
 namespace pandar_ros {
 struct EIGEN_ALIGN16 Point {
   PCL_ADD_POINT4D;
-  float intensity;
-  double timestamp;
-  uint16_t ring;
+  float intensity = 0;
+  double timestamp = 0;
+  uint16_t ring = 0;
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 }  // namespace pandar_ros
@@ -54,9 +54,9 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(
 namespace velodyne_ros {
   struct EIGEN_ALIGN16 Point {
       PCL_ADD_POINT4D;
-      float intensity;
-      float time;
-      uint16_t ring;
+      float intensity = 0;
+      float time = 0;
+      uint16_t ring = 0;
       EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   };
 }  // namespace velodyne_ros
@@ -72,12 +72,12 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(velodyne_ros::Point,
 namespace ouster_ros {
   struct EIGEN_ALIGN16 Point {
       PCL_ADD_POINT4D;
-      float intensity;
-      uint32_t t;
-      uint16_t reflectivity;
-      uint8_t  ring;
-      uint16_t ambient;
-      uint32_t range;
+      float intensity = 0;
+      uint32_t t = 0;
+      uint16_t reflectivity = 0;
+      uint8_t  ring = 0;
+      uint16_t ambient = 0;
+      uint32_t range = 0;
       EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   };
 }  // namespace ouster_ros
