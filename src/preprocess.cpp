@@ -264,8 +264,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       if (i % point_filter_num != 0) continue;
 
       double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y + pl_orig.points[i].z * pl_orig.points[i].z;
-      
-      if (range < (blind * blind)) continue;
+      if (range < (blind * blind) || range > max_range * max_range) continue;
       
       Eigen::Vector3d pt_vec;
       PointType added_pt;
@@ -276,13 +275,20 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       added_pt.normal_x = 0;
       added_pt.normal_y = 0;
       added_pt.normal_z = 0;
-      added_pt.curvature = pl_orig.points[i].t / time_unit_scale; // curvature unit: s
+      added_pt.curvature = (pl_orig.points[i].t - pl_orig.points[0].t) / time_unit_scale; // curvature unit: s
 
       pl_surf.points.push_back(added_pt);
     }
+
+    auto time_list_pl = [&](PointType& point_1, PointType& point_2) {
+      return (point_1.curvature < point_2.curvature);
+    };
+    std::sort(pl_surf.points.begin(), pl_surf.points.end(), time_list_pl);
+    while (pl_surf.points.back().curvature >= 0.1) {
+      pl_surf.points.pop_back();
+    }
+    std::cout << "pl_surf.points.back().curvature: " << pl_surf.points.back().curvature << std::endl;
   }
-  // pub_func(pl_surf, pub_full, msg->header.stamp);
-  // pub_func(pl_surf, pub_corn, msg->header.stamp);
 }
 
 void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)

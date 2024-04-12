@@ -6,7 +6,7 @@ common:
     # lid_topic: "hesai/pandar" 
     # imu_topic: "imu/data"    
     # lid_topic: "hesai/pandar" 
-    delay_time: 0.0 
+    delay_time: 0.15 
     time_sync_en_: false         # ONLY turn on when external time synchronization is really not possible
     time_offset_lidar_to_imu: 0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
                                   # This param will take effect no matter what time_sync_en_ is. So if the time offset is not known exactly, please set as 0.0
@@ -21,9 +21,9 @@ preprocess:
     max_range: 80.0                # 80
 
 motion_filter:
-    trans_threshold: 0.01    # m
-    rot_threshold: 0.5      # degree
-    time_threshold: 5.0     # s
+    trans_threshold: 0.1    # m
+    rot_threshold: 1.0      # degree
+    time_threshold: 50.0     # s
 
 mapping:
     acc_cov: 0.1
@@ -37,6 +37,9 @@ mapping:
     extrinsic_R: [ 1, 0, 0, 
                    0, 1, 0, 
                    0, 0, 1]
+    # extrinsic_R: [ 0, 1, 0, 
+    #                -1, 0, 0, 
+    #                0, 0, 1]
     # extrinsic_T: [0.070478, -0.006242, 0.107762]
     # extrinsic_R: [ 0.999926, -0.007594, -0.009503,
     #     0.007560, 0.999965, -0.003615,
@@ -49,6 +52,6 @@ publish:
     scan_bodyframe_pub_en: false  # true: output the point cloud scans in IMU-body-frame
 
 pcd_save:
-    pcd_save_en_: true
+    pcd_save_en_: false
     interval: -1                 # how many LiDAR frames saved in each pcd file; 
                                  # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
