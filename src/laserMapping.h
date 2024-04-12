@@ -53,6 +53,8 @@
 #include "IMU_Processing.hpp"
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree_impl.h>
+#include "BS_thread_pool.hpp"
+#include "BS_thread_pool_utils.hpp"
 
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -128,9 +130,11 @@ private:
     static std::mutex mtx_inistance_;
     static shared_ptr<FastLIO> fastlio_instance_;
 
+    BS::thread_pool pool{15};
+
 public:
     condition_variable sig_buffer_;
-    std::vector<std::shared_ptr<KD_TREE<PointType>>> ikdtree_vec_;
+    std::deque<std::shared_ptr<KD_TREE<PointType>>> ikdtree_vec_;
     std::shared_ptr<KD_TREE<PointType>> ikdtree_ = std::make_shared<KD_TREE<PointType>>();
     vector<PointVector>  nearest_points_;    //每个点的最近点序列
 
@@ -228,7 +232,7 @@ public:
     int pcd_save_interval_ = -1;
     int pcd_index_ = 0;
 
-    bool  lidar_pushed_flg_ = false, first_scan_flg_ = true, ekf_inited_flg_ = false;
+    bool  first_scan_flg_ = true, ekf_inited_flg_ = false;
     bool  scan_pub_en_ = false, dense_pub_en_ = false, scan_body_pub_en_ = false;
 
     // // NOT USED PARAMS
@@ -295,6 +299,14 @@ public:
 
     void savePcd();
 
+    // iKDTree Methods
+    std::shared_ptr<KD_TREE<PointType>> addIKdTree();
+    void pointsCacheCollect();    // 通过ikdtree，得到被剔除的点
+    void mapFovUpdate();    // 在拿到eskf前馈结果后，动态调整地图区域，防止地图过大而内存溢出，类似LOAM中提取局部地图的方法
+    void mapIncrement();         // 地图的增量更新，主要完成对ikd-tree的地图建立
+    void addPointToPcl(PointCloudXYZI::Ptr& pcl_points, const PointVector& PointToAdd, const PointVector& PointNoNeedDownsample);
+    void subSampleFrame(PointCloudXYZI::Ptr& frame, const double size_voxel);
+
 private:
     void processDataPackages(const ::ros::TimerEvent& timer_event);
     void publishData(const ::ros::TimerEvent& timer_event);
@@ -312,13 +324,6 @@ private:
     void RGBpointBodyToWorld(PointType const * const pi, PointType * const po);
     void RGBpointBodyLidarToIMU(PointType const * const pi, PointType * const po);
     bool compareStates();
-
-    // iKDTree Methods
-    void pointsCacheCollect();    // 通过ikdtree，得到被剔除的点
-    void mapFovUpdate();    // 在拿到eskf前馈结果后，动态调整地图区域，防止地图过大而内存溢出，类似LOAM中提取局部地图的方法
-    void mapIncrement();         // 地图的增量更新，主要完成对ikd-tree的地图建立
-    void addPointToPcl(PointCloudXYZI::Ptr& pcl_points, const PointVector& PointToAdd, const PointVector& PointNoNeedDownsample);
-    void subSampleFrame(PointCloudXYZI::Ptr& frame, const double size_voxel);
 
     void standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
     void imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in);

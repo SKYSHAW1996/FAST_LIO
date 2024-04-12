@@ -71,6 +71,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS} 
   ${PYTHON_INCLUDE_DIRS}
   include
+  3rdparties/thread-pool-4.1.0/include
 )
 link_directories(
   /usr/local/PCL19/lib
@@ -103,6 +104,8 @@ target_link_libraries(fast_lio PUBLIC
   ${catkin_LIBRARIES} 	
   ${PYTHON_LIBRARIES}
 )
+target_include_directories(fast_lio PUBLIC 3rdparties/thread-pool-4.1.0/include)
+
 add_executable(fastlio_mapping src/node_main.cpp)
 
 target_link_libraries(fastlio_mapping 

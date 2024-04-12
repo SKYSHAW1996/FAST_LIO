@@ -172,8 +172,6 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
             return;
         }
         ekf_inited_flg_ = (data_measures_.lidar_beg_time - first_lidar_time_) < INIT_TIME ? false : true;
-        /*** Segment the map in lidar FOV ***/
-        mapFovUpdate();
 
         /*** downsample the feature points in a scan ***/
         ds_filter_surf_.setInputCloud(feats_undistort_);
@@ -182,39 +180,18 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
         feats_origin_size_ = feats_undistort_->points.size();
 
         /*** initialize the map kdtree ***/
-        if(ikdtree_->Root_Node == nullptr) {
+        if(ikdtree_vec_.empty() || ikdtree_vec_.front()->Root_Node == nullptr) {
             if(feats_down_size_ > 5) {
-                state_point_ = kf_.get_x();
-                last_state_point_ = kf_.get_x();
-                pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
-
-                ikdtree_->set_downsample_param(0.05);
-                feats_down_world_->resize(feats_down_size_);
-                feats_undistort_world_->resize(feats_origin_size_);
-                // 初始化时用 feats_undistort_， 不进行降采样
-                for(int i = 0; i < feats_down_size_; i++){
-                    pointBodyToWorld(&(feats_down_body_->points[i]), &(feats_down_world_->points[i]));
-                }
-                for(int i = 0; i < feats_origin_size_; i++){
-                    pointBodyToWorld(&(feats_undistort_->points[i]), &(feats_undistort_world_->points[i]));
-                }
-                ikdtree_->Build(feats_undistort_world_->points);
-                ikdtree_->set_downsample_param(filter_size_map_min_);
+                std::cout << "/*** initialize the map kdtree ***/" << std::endl;
+                ikdtree_vec_.emplace_back(addIKdTree());
             }
             return;
         }
+        ikdtree_ = ikdtree_vec_.front();
 
         normvec_->resize(feats_down_size_);
         feats_down_world_->resize(feats_down_size_);
         nearest_points_.resize(feats_down_size_);
-
-        // if(1) // If you need to see map point, change to "if(1)"
-        // {
-        //     PointVector ().swap(ikdtree_->PCL_Storage);
-        //     ikdtree_->flatten(ikdtree_->Root_Node, ikdtree_->PCL_Storage, NOT_RECORD);
-        //     feats_from_map_->clear();
-        //     feats_from_map_->points = ikdtree_->PCL_Storage;
-        // }
         
         /*** iterated state estimation ***/
         double solve_H_time = 0;
@@ -235,12 +212,41 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
             mapIncrement();
             last_state_point_ = state_point_;
             last_lidar_end_time_ = lidar_end_time_;
+            /*** Segment the map in lidar FOV ***/
+            // pool.detach_task([&]{
+            //     std::shared_ptr<FastLIO> fast_lio_instance = FastLIO::getInstance();
+            //     fast_lio_instance->mapFovUpdate();
+            // });
+            mapFovUpdate();
         }
         
         /******* Publish odometry *******/
         publishOdometry(odom_pub_);
 
     }
+}
+
+std::shared_ptr<KD_TREE<PointType>> FastLIO::addIKdTree()
+{
+    std::cout << "FastLIO::addIKdTree()" << std::endl;
+    std::shared_ptr<KD_TREE<PointType>> ikdtree_tmp = std::make_shared<KD_TREE<PointType>>();
+    /*** initialize the map kdtree ***/
+    state_point_ = kf_.get_x();
+    last_state_point_ = kf_.get_x();
+    pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
+
+    ikdtree_tmp->set_downsample_param(filter_size_map_min_);
+    feats_down_world_->resize(feats_down_size_);
+    // feats_undistort_world_->resize(feats_origin_size_);
+
+    for(int i = 0; i < feats_down_size_; i++){
+        pointBodyToWorld(&(feats_down_body_->points[i]), &(feats_down_world_->points[i]));
+    }
+    // for(int i = 0; i < feats_origin_size_; i++){
+    //     pointBodyToWorld(&(feats_undistort_->points[i]), &(feats_undistort_world_->points[i]));
+    // }
+    ikdtree_tmp->Build(feats_down_world_->points);
+    return ikdtree_tmp;
 }
 
 bool FastLIO::compareStates() 
@@ -427,9 +433,8 @@ void FastLIO::pointsCacheCollect()
 void FastLIO::mapFovUpdate()
 {   
     // 清空上一次需要移除的区域的数据量
-    localmap_cub_remove_.clear(); 
-    kdtree_delete_counter_ = 0;
-    kdtree_delete_time_ = 0.0;    
+    // localmap_cub_remove_.clear(); 
+    kdtree_delete_counter_ = 0; 
 
     pointBodyToWorld(XAxisPoint_body, XAxisPoint_world); // not used
     // 获取 world 系下 lidar 位置
@@ -457,9 +462,9 @@ void FastLIO::mapFovUpdate()
     // 计算移动的距离
     BoxPointType New_LocalMap_Points, tmp_boxpoints;
     New_LocalMap_Points = localmap_boxpoints_;
-    float mov_dist = max((localmap_cube_len_ - 2.0 * mov_thresh_ * det_range_) * 0.5 * 0.9, double(det_range_ * (mov_thresh_ -1)));
+    float mov_dist = max((localmap_cube_len_ - 2.0 * det_range_) * 0.5 * 0.9, double(det_range_ * (mov_thresh_ -1)));
     for (int i = 0; i < 3; i++){
-        tmp_boxpoints = localmap_boxpoints_;
+        // tmp_boxpoints = localmap_boxpoints_;
         if (dist_to_map_edge[i][0] <= mov_thresh_ * det_range_){
             New_LocalMap_Points.vertex_max[i] -= mov_dist;
             New_LocalMap_Points.vertex_min[i] -= mov_dist;
@@ -474,13 +479,23 @@ void FastLIO::mapFovUpdate()
     }
     localmap_boxpoints_ = New_LocalMap_Points;
 
+    // 其实此处ikdtree不用太在意其更新的手段，就算移植到carto中，只要保证ikdtree足够“小”，就不太会影响全局。
+    // 毕竟localtraj的结果给到global后，会乘上map->odom的调整变换
+    // 需要考虑的是：怎么再提速一下
+    // if (need_move && ikdtree_vec_.size() <= 2) {
+    //     std::cout << "idtree need add: " << need_move << ", ikdtree_vec_ size: " << ikdtree_vec_.size() << std::endl;
+    //     std::cout << "new idtree origin: " << pos_LiD(0) << ", " << pos_LiD(1) << ", " << pos_LiD(2) << ". " << std::endl;
+    //     ikdtree_vec_.emplace_back(addIKdTree());
+    // }
+
+    // if (ikdtree_vec_.size() > 2) ikdtree_vec_.pop_front();
+
     // pointsCacheCollect();
     double delete_begin = omp_get_wtime();
     if(localmap_cub_remove_.size() > 0) {
         kdtree_delete_counter_ = ikdtree_->Delete_Point_Boxes(localmap_cub_remove_);
         // std::cout<<">>>>>>> kdtree_delete_counter_: "<< kdtree_delete_counter_ << std::endl;
     }
-    kdtree_delete_time_ = omp_get_wtime() - delete_begin;
 }
 
 void FastLIO::mapIncrement()
@@ -534,11 +549,11 @@ void FastLIO::mapIncrement()
         }
     }
 
-    double st_time = omp_get_wtime();
-    int add_point_size_1 = ikdtree_->Add_Points(PointToAdd, true);
-    int add_point_size_2 = ikdtree_->Add_Points(PointNoNeedDownsample, false); 
-    add_point_size_ = add_point_size_1 + add_point_size_2;
-    kdtree_incremental_time_ = omp_get_wtime() - st_time;
+    for (auto& ikdtree : ikdtree_vec_) {
+        int add_point_size_1 = ikdtree->Add_Points(PointToAdd, true);
+        int add_point_size_2 = ikdtree->Add_Points(PointNoNeedDownsample, false); 
+        add_point_size_ = add_point_size_1 + add_point_size_2;
+    }
 
     addPointToPcl(points_world_, PointToAdd, PointNoNeedDownsample);
     map_point_mutex_.lock();
@@ -626,22 +641,16 @@ bool FastLIO::syncPackages(MeasureGroup &meas)
     }
 
     /*** push a lidar scan ***/
-    if(!lidar_pushed_flg_)
-    {
-        meas.lidar = lidar_buffer_.front();
-        meas.lidar_beg_time = time_buffer_.front();
+    meas.lidar = lidar_buffer_.front();
+    meas.lidar_beg_time = time_buffer_.front();
+    lidar_end_time_ = meas.lidar_beg_time + 
+                std::abs(meas.lidar->points.back().curvature - meas.lidar->points.front().curvature);
+    meas.lidar_end_time_ = lidar_end_time_;
 
-        lidar_end_time_ = meas.lidar_beg_time + 
-                    std::abs(meas.lidar->points.back().curvature - meas.lidar->points.front().curvature);
-        meas.lidar_end_time_ = lidar_end_time_;
-
-        lidar_pushed_flg_ = true;
-    }
-
-    if (last_timestamp_imu_ < lidar_end_time_) {
-        cout << "lidar_end_time_ - last_timestamp_imu_: " << lidar_end_time_ - last_timestamp_imu_ <<endl;
-        return false;
-    }
+    // if (last_timestamp_imu_ < lidar_end_time_) {
+    //     cout << "lidar_end_time_ - last_timestamp_imu_: " << lidar_end_time_ - last_timestamp_imu_ <<endl;
+    //     return false;
+    // }
 
     /*** push imu data, and pop from imu buffer ***/
     double imu_time = imu_buffer_.front()->header.stamp.toSec();
@@ -656,7 +665,6 @@ bool FastLIO::syncPackages(MeasureGroup &meas)
 
     lidar_buffer_.pop_front();
     time_buffer_.pop_front();
-    lidar_pushed_flg_ = false;
     return true;
 }
 

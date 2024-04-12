@@ -30,7 +30,7 @@ mapping:
     b_acc_cov: 0.001
     b_gyr_cov: 0.0001
     fov_degree:    180
-    det_range:     100.0          # 用以判断机器人本体位置与地图cube边界的距离，小于1.5倍该阈值则更新ikdtree
+    det_range:     90.0          # 用以判断机器人本体位置与地图cube边界的距离，小于1.5倍该阈值则更新ikdtree
     extrinsic_est_en_:  false      # true: enable the online estimation of IMU-LiDAR extrinsic,
     extrinsic_T: [ 0.00, 0.0, 0.0]
     extrinsic_R: [ 1, 0, 0, 
