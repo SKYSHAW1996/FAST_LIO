@@ -2,14 +2,17 @@ common:
     lid_topic:  "points_raw"    
     # imu_topic:  "imu_correct"   
     imu_topic:  "imu_raw"    
+
     # imu_topic: "imu/data_raw"    
     # lid_topic: "hesai/pandar" 
+
     # imu_topic: "imu/data"    
     # lid_topic: "hesai/pandar" 
     delay_time: 0.15 
     time_sync_en_: false         # ONLY turn on when external time synchronization is really not possible
     time_offset_lidar_to_imu: 0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
                                   # This param will take effect no matter what time_sync_en_ is. So if the time offset is not known exactly, please set as 0.0
+    max_iteration: 3
     result_map_resolution: 0.05
 
 preprocess:
@@ -17,8 +20,9 @@ preprocess:
     scan_line: 16
     scan_rate: 10                # only need to be set for velodyne, unit: Hz,
     timestamp_unit: 2            # the unit of time/t field in the PointCloud2 rostopic: 0-second, 1-milisecond, 2-microsecond, 3-nanosecond.
-    blind: 1.0                     #  视野近处盲区距离, 过大会影响对地面的匹配约束，过小会引人机器人本体,4.0
+    blind: 0.2                     #  视野近处盲区距离, 过大会影响对地面的匹配约束，过小会引人机器人本体,4.0
     max_range: 80.0                # 80
+    point_filter_num:   3
 
 motion_filter:
     trans_threshold: 0.1    # m
@@ -31,19 +35,29 @@ mapping:
     b_acc_cov: 0.001
     b_gyr_cov: 0.0001
     fov_degree:    180
+    cube_side_length: 500
     det_range:     90.0          # 用以判断机器人本体位置与地图cube边界的距离，小于1.5倍该阈值则更新ikdtree
-    extrinsic_est_en_:  false      # true: enable the online estimation of IMU-LiDAR extrinsic,
+    extrinsic_est_en:  false      # true: enable the online estimation of IMU-LiDAR extrinsic,
+
     extrinsic_T: [ 0.00, 0.0, 0.0]
     extrinsic_R: [ 1, 0, 0, 
                    0, 1, 0, 
                    0, 0, 1]
+
     # extrinsic_R: [ 0, 1, 0, 
     #                -1, 0, 0, 
     #                0, 0, 1]
+
     # extrinsic_T: [0.070478, -0.006242, 0.107762]
     # extrinsic_R: [ 0.999926, -0.007594, -0.009503,
     #     0.007560, 0.999965, -0.003615,
     #     0.009530, 0.003543, 0.999948]
+
+    filter_size_matching: 0.2
+    filter_size_tree_map: 0.05
+
+    max_num_residuals: 600
+    min_num_residuals: 50
 
 publish:
     path_en_:  true

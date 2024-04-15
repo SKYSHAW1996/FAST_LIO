@@ -138,6 +138,9 @@ public:
     std::shared_ptr<KD_TREE<PointType>> ikdtree_ = std::make_shared<KD_TREE<PointType>>();
     vector<PointVector>  nearest_points_;    //每个点的最近点序列
 
+    int max_num_residuals_ = 2000;
+    int min_num_residuals_ = 1;
+
     PointCloudXYZI::Ptr feats_down_body_;    //畸变纠正后降采样的单帧点云，lidar系
     PointCloudXYZI::Ptr feats_down_world_;   //畸变纠正后降采样的单帧点云，w系
     PointCloudXYZI::Ptr normvec_;            //特征点在地图中对应点的，局部平面参数,w系
@@ -192,8 +195,8 @@ public:
     // LiDAR Preprocess DS Params  
     pcl::VoxelGrid<PointType> ds_filter_surf_;
     pcl::VoxelGrid<PointType> ds_filter_map_;  
-    double filter_size_surf_min_ = 0;
-    double filter_size_map_min_ = 0;
+    double filter_size_matching_ = 0;
+    double filter_size_tree_map_ = 0;
     double lidar_mean_scantime_ = 0.0;
     int    scan_num_ = 0;
 
@@ -419,12 +422,17 @@ void H_Share_Model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
             fast_lio_instance->total_residual_ += fast_lio_instance->res_last_[i];
             fast_lio_instance->effct_feat_num_ ++;
         }
+
+        if (fast_lio_instance->effct_feat_num_ > fast_lio_instance->max_num_residuals_) 
+            break;
     }
 
-    if (fast_lio_instance->effct_feat_num_ < 1)
+    if (fast_lio_instance->effct_feat_num_ < fast_lio_instance->min_num_residuals_)
     {
         ekfom_data.valid = false;
-        ROS_WARN("No Effective Points! \n");
+        ROS_WARN("No Enough Effective Points! The thresh min_num_residuals is %d, \
+                the current effective points number is %d.\n", 
+                fast_lio_instance->min_num_residuals_, fast_lio_instance->effct_feat_num_);
         return;
     }
 

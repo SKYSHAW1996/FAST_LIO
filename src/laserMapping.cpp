@@ -56,8 +56,9 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     nh_.param<bool>("publish/scan_publish_en",scan_pub_en_, true);
     nh_.param<bool>("publish/dense_publish_en",dense_pub_en_, true);
     nh_.param<bool>("publish/scan_bodyframe_pub_en",scan_body_pub_en_, true);
-    nh_.param<int>("max_iteration",NUM_MAX_ITERATIONS,4);
     nh_.param<string>("map_file_path",map_file_path,"");
+
+    nh_.param<int>("common/max_iteration",NUM_MAX_ITERATIONS,4);
     nh_.param<string>("common/lid_topic",lid_topic,"/livox/lidar");
     nh_.param<string>("common/imu_topic", imu_topic,"/imu/data");
     nh_.param<double>("common/delay_time", delay_time_, 0.0);
@@ -69,27 +70,29 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     nh_.param<double>("motion_filter/rot_threshold", rot_threshold_, 1.5);
     nh_.param<double>("motion_filter/time_threshold", time_threshold_, 5.0);
 
+    nh_.param<bool>("mapping/extrinsic_est_en", extrinsic_est_en_, true);
     nh_.param<float>("mapping/det_range",det_range_,300.f);
     nh_.param<double>("mapping/fov_degree",fov_deg,180);
     nh_.param<double>("mapping/gyr_cov",gyr_cov_,0.1);
     nh_.param<double>("mapping/acc_cov",acc_cov_,0.1);
     nh_.param<double>("mapping/b_gyr_cov",b_gyr_cov_,0.0001);
     nh_.param<double>("mapping/b_acc_cov",b_acc_cov_,0.0001);
+    nh_.param<double>("mapping/cube_side_length",localmap_cube_len_,200);
+    nh_.param<double>("mapping/filter_size_matching",filter_size_matching_,0.5);
+    nh_.param<double>("mapping/filter_size_tree_map",filter_size_tree_map_,0.3);
+    nh_.param<int>("mapping/max_num_residuals", max_num_residuals_, 2000);
+    nh_.param<int>("mapping/min_num_residuals", min_num_residuals_, 1);
 
+    nh_.param<int>("preprocess/point_filter_num", p_pre_->point_filter_num, 2);
     nh_.param<double>("preprocess/blind", p_pre_->blind, 0.01);
     nh_.param<double>("preprocess/max_range", p_pre_->max_range, 150);
     nh_.param<int>("preprocess/lidar_type", p_pre_->lidar_type, AVIA);
     nh_.param<int>("preprocess/scan_line", p_pre_->N_SCANS, 16);
     nh_.param<int>("preprocess/timestamp_unit", p_pre_->time_unit, US);
     nh_.param<int>("preprocess/scan_rate", p_pre_->SCAN_RATE, 10);
-
-    nh_.param<double>("filter_size_surf",filter_size_surf_min_,0.5);
-    nh_.param<double>("filter_size_map",filter_size_map_min_,0.5);
-    nh_.param<double>("cube_side_length",localmap_cube_len_,200);
-    nh_.param<int>("point_filter_num", p_pre_->point_filter_num, 2);
+    
     nh_.param<bool>("feature_extract_enable", p_pre_->feature_enabled, false);
     nh_.param<bool>("runtime_pos_log_enable", runtime_pos_log_, 0);
-    nh_.param<bool>("mapping/extrinsic_est_en_", extrinsic_est_en_, true);
     nh_.param<bool>("pcd_save/pcd_save_en_", pcd_save_en_, false);
     nh_.param<int>("pcd_save/interval", pcd_save_interval_, -1);
 
@@ -115,8 +118,8 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     // memset(point_selected_surf_, true, sizeof(point_selected_surf_));
     // memset(res_last_, -1000.0f, sizeof(res_last_));
 
-    ds_filter_surf_.setLeafSize(filter_size_surf_min_, filter_size_surf_min_, filter_size_surf_min_);
-    ds_filter_map_.setLeafSize(filter_size_map_min_, filter_size_map_min_, filter_size_map_min_);
+    ds_filter_surf_.setLeafSize(filter_size_matching_, filter_size_matching_, filter_size_matching_);
+    ds_filter_map_.setLeafSize(filter_size_tree_map_, filter_size_tree_map_, filter_size_tree_map_);
 
     Lidar_T_wrt_IMU_<<VEC_FROM_ARRAY(extrinT_);
     Lidar_R_wrt_IMU_<<MAT_FROM_ARRAY(extrinR_);
@@ -182,7 +185,7 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
         /*** initialize the map kdtree ***/
         if(ikdtree_vec_.empty() || ikdtree_vec_.front()->Root_Node == nullptr) {
             if(feats_down_size_ > 5) {
-                std::cout << "/*** initialize the map kdtree ***/" << std::endl;
+                ROS_INFO("/*** initialize the map kdtree ***/\n");
                 ikdtree_vec_.emplace_back(addIKdTree());
             }
             return;
@@ -219,6 +222,7 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
             // });
             mapFovUpdate();
         }
+        ROS_DEBUG("Effctive feature number: %d\n", effct_feat_num_);
         
         /******* Publish odometry *******/
         publishOdometry(odom_pub_);
@@ -235,7 +239,7 @@ std::shared_ptr<KD_TREE<PointType>> FastLIO::addIKdTree()
     last_state_point_ = kf_.get_x();
     pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
 
-    ikdtree_tmp->set_downsample_param(filter_size_map_min_);
+    ikdtree_tmp->set_downsample_param(filter_size_tree_map_);
     feats_down_world_->resize(feats_down_size_);
     // feats_undistort_world_->resize(feats_origin_size_);
 
@@ -325,11 +329,9 @@ void FastLIO::subSampleFrame(PointCloudXYZI::Ptr& frame, const double size_voxel
     grid[voxel(kx, ky, kz)].push_back(frame->points[i]);
   }
   frame->resize(0);
-  int step = 0;
   for (const auto& n : grid) {
     if (n.second.size() > 0) {
       frame->push_back(n.second[0]);
-      step++;
     }
   }
 }
@@ -519,13 +521,13 @@ void FastLIO::mapIncrement()
             // mid_point即为该特征点所属的栅格的中心点坐标
             PointType downsample_result, mid_point; 
             // filter_size_map_min是地图体素降采样的栅格边长
-            mid_point.x = floor(feats_down_world_->points[i].x/filter_size_map_min_)*filter_size_map_min_ + 0.5 * filter_size_map_min_;
-            mid_point.y = floor(feats_down_world_->points[i].y/filter_size_map_min_)*filter_size_map_min_ + 0.5 * filter_size_map_min_;
-            mid_point.z = floor(feats_down_world_->points[i].z/filter_size_map_min_)*filter_size_map_min_ + 0.5 * filter_size_map_min_;
+            mid_point.x = floor(feats_down_world_->points[i].x/filter_size_tree_map_)*filter_size_tree_map_ + 0.5 * filter_size_tree_map_;
+            mid_point.y = floor(feats_down_world_->points[i].y/filter_size_tree_map_)*filter_size_tree_map_ + 0.5 * filter_size_tree_map_;
+            mid_point.z = floor(feats_down_world_->points[i].z/filter_size_tree_map_)*filter_size_tree_map_ + 0.5 * filter_size_tree_map_;
             // 当前点与box中心的距离
             float dist  = calc_dist(feats_down_world_->points[i],mid_point);
             // 判断最近点在x、y、z三个方向上，与中心的距离，判断是否加入时需要降采样
-            if (fabs(points_near[0].x - mid_point.x) > 0.5 * filter_size_map_min_ && fabs(points_near[0].y - mid_point.y) > 0.5 * filter_size_map_min_ && fabs(points_near[0].z - mid_point.z) > 0.5 * filter_size_map_min_){
+            if (fabs(points_near[0].x - mid_point.x) > 0.5 * filter_size_tree_map_ && fabs(points_near[0].y - mid_point.y) > 0.5 * filter_size_tree_map_ && fabs(points_near[0].z - mid_point.z) > 0.5 * filter_size_tree_map_){
                 // 若三个方向距离都大于地图栅格半轴长，无需降采样
                 PointNoNeedDownsample.push_back(feats_down_world_->points[i]);
                 continue;

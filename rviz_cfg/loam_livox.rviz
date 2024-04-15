@@ -127,8 +127,8 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 30.246883392333984
-            Min Value: -4.530381679534912
+            Max Value: 9.855167388916016
+            Min Value: -4.329478740692139
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -208,7 +208,7 @@ Visualization Manager:
       Head Length: 0
       Length: 0.30000001192092896
       Line Style: Billboards
-      Line Width: 0.20000000298023224
+      Line Width: 0.07999999821186066
       Name: Path
       Offset:
         X: 0
@@ -316,7 +316,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 54.640037536621094
+      Distance: 32.76737976074219
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -353,4 +353,4 @@ Window Geometry:
     collapsed: true
   Width: 1389
   X: 417
-  Y: 27
+  Y: 0
