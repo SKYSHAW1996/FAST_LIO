@@ -53,8 +53,8 @@ mapping:
     #     0.007560, 0.999965, -0.003615,
     #     0.009530, 0.003543, 0.999948]
 
-    filter_size_matching: 0.2
-    filter_size_tree_map: 0.05
+    filter_size_matching: 0.3
+    filter_size_tree_map: 0.15
 
     max_num_residuals: 600
     min_num_residuals: 50

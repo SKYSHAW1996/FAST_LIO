@@ -11,12 +11,10 @@ std::mutex FastLIO::mtx_inistance_;
 shared_ptr<FastLIO> FastLIO::fastlio_instance_ = nullptr;
 
 std::shared_ptr<FastLIO> FastLIO::getInstance(ros::NodeHandle nh) {
-    // std::cout << "Let's get a FastLIO instance." << std::endl;
     if (fastlio_instance_ == nullptr) {
         std::unique_lock<std::mutex> lock(mtx_inistance_);
         if (fastlio_instance_ == nullptr) {
             auto temp = std::shared_ptr<FastLIO>(new FastLIO(nh));
-            // std::cout << "Let's get a FastLIO instance with param handler." << std::endl;
             fastlio_instance_ = temp;
         }
     }
@@ -24,13 +22,11 @@ std::shared_ptr<FastLIO> FastLIO::getInstance(ros::NodeHandle nh) {
 }
 
 std::shared_ptr<FastLIO> FastLIO::getInstance() {
-    // std::cout << "try to get a FastLIO instance without roshandler." << std::endl;
     if (fastlio_instance_ == nullptr) {
         std::unique_lock<std::mutex> lock(mtx_inistance_);
         if (fastlio_instance_ == nullptr) {
             ros::NodeHandle nh;
             auto temp = std::shared_ptr<FastLIO>(new FastLIO(nh));
-            // std::cout << "Let's get a FastLIO instance with tmp handler." << std::endl;
             fastlio_instance_ = temp;
         }
     }
@@ -98,8 +94,8 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
 
     nh_.param<vector<double>>("mapping/extrinsic_T", extrinT_, vector<double>());
     nh_.param<vector<double>>("mapping/extrinsic_R", extrinR_, vector<double>());
-    cout<<"p_pre_->lidar_type "<<p_pre_->lidar_type<<endl;
-    cout<<"cube_side_length "<<localmap_cube_len_<<endl;
+    ROS_INFO("p_pre_->lidar_type: %d.\n", p_pre_->lidar_type);
+    ROS_INFO("cube_side_length: %f\n", localmap_cube_len_);
     
     path_.header.stamp    = ros::Time::now();
     path_.header.frame_id ="camera_init";
@@ -114,9 +110,6 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     pcl_wait_pub_.reset(new PointCloudXYZI());
     pcl_wait_save_.reset(new PointCloudXYZI());
     feats_array_.reset(new PointCloudXYZI());
-
-    // memset(point_selected_surf_, true, sizeof(point_selected_surf_));
-    // memset(res_last_, -1000.0f, sizeof(res_last_));
 
     ds_filter_surf_.setLeafSize(filter_size_matching_, filter_size_matching_, filter_size_matching_);
     ds_filter_map_.setLeafSize(filter_size_tree_map_, filter_size_tree_map_, filter_size_tree_map_);
@@ -232,7 +225,7 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
 
 std::shared_ptr<KD_TREE<PointType>> FastLIO::addIKdTree()
 {
-    std::cout << "FastLIO::addIKdTree()" << std::endl;
+    ROS_INFO("FastLIO::addIKdTree().\n");
     std::shared_ptr<KD_TREE<PointType>> ikdtree_tmp = std::make_shared<KD_TREE<PointType>>();
     /*** initialize the map kdtree ***/
     state_point_ = kf_.get_x();
@@ -428,7 +421,6 @@ void FastLIO::pointsCacheCollect()
     ikdtree_->acquire_removed_points(points_history);
     feats_array_->clear();
     for (int i = 0; i < points_history.size(); i++) feats_array_->push_back(points_history[i]);
-    // cout<<">>>>>>> kdtree acquire_removed_points size: "<< feats_array_->size() << endl;
 
 }
 
@@ -496,7 +488,6 @@ void FastLIO::mapFovUpdate()
     double delete_begin = omp_get_wtime();
     if(localmap_cub_remove_.size() > 0) {
         kdtree_delete_counter_ = ikdtree_->Delete_Point_Boxes(localmap_cub_remove_);
-        // std::cout<<">>>>>>> kdtree_delete_counter_: "<< kdtree_delete_counter_ << std::endl;
     }
 }
 
@@ -614,7 +605,6 @@ void FastLIO::imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in)
     }
 
     last_timestamp_imu_ = timestamp;
-    // cout << "timestamp imu:  "<< last_timestamp_imu_ <<endl;
     imu_buffer_.emplace_back(msg);
     // MeasureGroup tmp_imu_measure;
     // tmp_imu_measure.imu.push_back(msg);
@@ -719,7 +709,6 @@ void FastLIO::publishFrameWorld(const ros::Publisher & cloud_full_pub_)
     //         pcd_index_ ++;
     //         string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index_) + string(".pcd"));
     //         pcl::PCDWriter pcd_writer;
-    //         cout << "current scan saved to /PCD/" << all_points_dir << endl;
     //         pcd_writer.writeBinary(all_points_dir, *pcl_wait_save_);
     //         pcl_wait_save_->clear();
     //         scan_wait_num = 0;

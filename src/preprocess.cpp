@@ -87,8 +87,7 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
     break;
   }
   if(0 == pl_surf.points.size()) {
-    std::cout << "0 == pl_surf.points.size()" << std::endl;
-    // return;
+    ROS_WARN("0 == pl_surf.points.size()!\n");
   }
   *pcl_out = pl_surf;
 }
@@ -287,7 +286,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     while (pl_surf.points.back().curvature >= 0.1) {
       pl_surf.points.pop_back();
     }
-    std::cout << "pl_surf.points.back().curvature: " << pl_surf.points.back().curvature << std::endl;
+    ROS_DEBUG("pl_surf.points.back().curvature: %f.\n", pl_surf.points.back().curvature);
   }
 }
 
@@ -401,8 +400,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     while ( pl_surf.points.back().curvature >= 0.1) {
       pl_surf.points.pop_back();
     }
-
-    std::cout << "pl_surf.points.back().curvature: " << pl_surf.points.back().curvature << std::endl;
+    ROS_DEBUG("pl_surf.points.back().curvature: %f.\n", pl_surf.points.back().curvature);
     
 }
 
@@ -516,7 +514,7 @@ void Preprocess::pandar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     while (pl_surf.points.back().curvature >= 0.1) {
       pl_surf.points.pop_back();
     }
-    std::cout << "pl_surf.points.back().curvature: " << pl_surf.points.back().curvature << std::endl;
+    ROS_DEBUG("pl_surf.points.back().curvature: %f.\n", pl_surf.points.back().curvature);
 }
 
 //相邻两点距光心差距大则设为不进行特征提取的状态，差距过大，周围点也设置为不进行特征提取的状态
