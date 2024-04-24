@@ -117,7 +117,7 @@ Visualization Manager:
           Queue Size: 100000
           Selectable: true
           Size (Pixels): 1
-          Size (m): 0.05000000074505806
+          Size (m): 0.07999999821186066
           Style: Flat Squares
           Topic: /cloud_registered
           Unreliable: false
@@ -127,8 +127,8 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 16.450210571289062
-            Min Value: -4.696555137634277
+            Max Value: 17.465417861938477
+            Min Value: -6.532142639160156
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -316,22 +316,22 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 51.56010437011719
+      Distance: 90.86651611328125
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 5.067248344421387
-        Y: -8.855779647827148
-        Z: 1.1154658794403076
+        X: -3.1453027725219727
+        Y: -28.6449031829834
+        Z: 1.3028838634490967
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.389796257019043
+      Pitch: 1.3797962665557861
       Target Frame: body
       Value: Orbit (rviz)
       Yaw: 2.70040225982666
@@ -353,4 +353,4 @@ Window Geometry:
     collapsed: true
   Width: 1389
   X: 271
-  Y: 142
+  Y: 112

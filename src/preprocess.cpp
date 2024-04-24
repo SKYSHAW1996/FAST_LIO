@@ -92,6 +92,80 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
   *pcl_out = pl_surf;
 }
 
+void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out,
+                                deque<PointCloudXYZI::Ptr> &pcl_out_deque, deque<double> &time_lidar)
+{
+  switch (time_unit)
+  {
+    case SEC:
+      time_unit_scale = 1.f;
+      break;
+    case MS:
+      time_unit_scale = 1.e3f;
+      break;
+    case US:
+      time_unit_scale = 1.e6f;
+      break;
+    case NS:
+      time_unit_scale = 1.e9f;
+      break;
+    default:
+      time_unit_scale = 1.f;
+      break;
+  }
+
+  switch (lidar_type)
+  {
+  case OUST64:
+    oust64_handler(msg);
+    break;
+
+  case VELO16:
+    velodyne_handler(msg);
+    break;
+  
+  case PANDAR:
+    pandar_handler(msg);
+    break;
+  
+  default:
+    printf("Error LiDAR Type");
+    break;
+  }
+  if(0 == pl_surf.points.size()) {
+    ROS_WARN("0 == pl_surf.points.size()!\n");
+  }
+  *pcl_out = pl_surf;
+
+  double last_frame_end_time = msg->header.stamp.toSec();
+  uint valid_num = 0;
+  uint cut_num = 0;
+  uint valid_pcl_size = pl_surf.points.size();
+
+  int required_cut_num = required_frame_num;
+  // if (scan_count < 20)
+  //     required_cut_num = 1;
+
+  PointCloudXYZI pcl_cut;
+  for (uint i = 1; i < valid_pcl_size; i++) {
+      valid_num++;
+      pl_surf[i].curvature += msg->header.stamp.toSec() - last_frame_end_time;
+      pcl_cut.push_back(pl_surf[i]);
+
+      if (valid_num == (int((cut_num + 1) * valid_pcl_size / required_cut_num) - 1)) {
+          cut_num++;
+          time_lidar.push_back(last_frame_end_time);
+          PointCloudXYZI::Ptr pcl_temp(new PointCloudXYZI());
+          *pcl_temp = pcl_cut;
+          pcl_out_deque.push_back(pcl_temp);
+          last_frame_end_time += pl_surf[i].curvature;
+          pcl_cut.clear();
+          pcl_cut.reserve(valid_pcl_size * 2 / required_frame_num);
+      }
+  }
+
+}
+
 // void Preprocess::avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg)
 // {
 //   pl_surf.clear();

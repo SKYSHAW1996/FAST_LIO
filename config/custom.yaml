@@ -19,10 +19,11 @@ preprocess:
     lidar_type: 2                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 4 for pandar
     scan_line: 16
     scan_rate: 10                # only need to be set for velodyne, unit: Hz,
-    timestamp_unit: 2            # the unit of time/t field in the PointCloud2 rostopic: 0-second, 1-milisecond, 2-microsecond, 3-nanosecond.
+    timestamp_unit: 2            # the unit of time/t field in the PointCloud2: 0-second, 1-milisecond, 2-microsecond, 3-nanosecond.
     blind: 0.2                     #  视野近处盲区距离, 过大会影响对地面的匹配约束，过小会引人机器人本体,4.0
     max_range: 80.0                # 80
     point_filter_num:   3
+    required_frame_num: 5        # 该参数小于等于1时，使用常规处理；大于1时，进行切分;当前版本，切分的frame不能超过imu-rate/lidar-rate
 
 motion_filter:
     trans_threshold: 0.1    # m
@@ -54,10 +55,10 @@ mapping:
     #     0.009530, 0.003543, 0.999948]
 
     filter_size_matching: 0.3
-    filter_size_tree_map: 0.15
+    filter_size_tree_map: 0.2
 
     max_num_residuals: 600
-    min_num_residuals: 50
+    min_num_residuals: 0
 
 publish:
     path_en_:  true

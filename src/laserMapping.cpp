@@ -86,6 +86,7 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     nh_.param<int>("preprocess/scan_line", p_pre_->N_SCANS, 16);
     nh_.param<int>("preprocess/timestamp_unit", p_pre_->time_unit, US);
     nh_.param<int>("preprocess/scan_rate", p_pre_->SCAN_RATE, 10);
+    nh_.param<int>("preprocess/required_frame_num", p_pre_->required_frame_num, 1);
     
     nh_.param<bool>("feature_extract_enable", p_pre_->feature_enabled, false);
     nh_.param<bool>("runtime_pos_log_enable", runtime_pos_log_, 0);
@@ -577,11 +578,27 @@ void FastLIO::standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg)
         time_buffer_.clear();
     }
 
-    PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
-    p_pre_->process(msg, ptr);
-    lidar_buffer_.emplace_back(ptr);
-    time_buffer_.emplace_back(msg->header.stamp.toSec());
-    last_timestamp_lidar_ = msg->header.stamp.toSec();
+    if(p_pre_->required_frame_num <= 1 || scan_count_ < 20) {
+        PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
+        p_pre_->process(msg, ptr);
+        lidar_buffer_.emplace_back(ptr);
+        time_buffer_.emplace_back(msg->header.stamp.toSec());
+        last_timestamp_lidar_ = msg->header.stamp.toSec();
+    } else {
+        PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
+        deque<PointCloudXYZI::Ptr> ptr_deque;
+        deque<double> timestamp_lidar;
+        p_pre_->process(msg, ptr, ptr_deque, timestamp_lidar);
+        while (!ptr_deque.empty() && !timestamp_lidar.empty()) {
+            lidar_buffer_.push_back(ptr_deque.front());
+            time_buffer_.push_back(timestamp_lidar.front()); //unit:s
+
+            ptr_deque.pop_front();
+            timestamp_lidar.pop_front();
+
+            last_timestamp_lidar_ = timestamp_lidar.front();
+        }
+    }
 
     mtx_buffer_.unlock();
     sig_buffer_.notify_all();
@@ -593,10 +610,10 @@ void FastLIO::imuCallback(const sensor_msgs::Imu::ConstPtr &msg_in)
     sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
 
     double timestamp = msg->header.stamp.toSec();
-    if(timestamp < last_timestamp_lidar_) {
-        ROS_WARN("newest imu is older than lidar timestamp");
-        return;
-    }
+    // if(timestamp < last_timestamp_lidar_) {
+    //     ROS_WARN("newest imu is older than lidar timestamp");
+    //     return;
+    // }
 
     mtx_buffer_.lock();
     if (timestamp < last_timestamp_imu_) {
