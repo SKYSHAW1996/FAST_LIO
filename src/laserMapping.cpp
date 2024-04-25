@@ -74,8 +74,9 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     nh_.param<double>("mapping/b_gyr_cov",b_gyr_cov_,0.0001);
     nh_.param<double>("mapping/b_acc_cov",b_acc_cov_,0.0001);
     nh_.param<double>("mapping/cube_side_length",localmap_cube_len_,200);
+    nh_.param<double>("mapping/filter_size_for_pcd",filter_size_for_pcd_,0.2);
     nh_.param<double>("mapping/filter_size_matching",filter_size_matching_,0.5);
-    nh_.param<double>("mapping/filter_size_tree_map",filter_size_tree_map_,0.3);
+    nh_.param<double>("mapping/filter_size_tree_map",filter_size_tree_map_,0.5);
     nh_.param<int>("mapping/max_num_residuals", max_num_residuals_, 2000);
     nh_.param<int>("mapping/min_num_residuals", min_num_residuals_, 1);
 
@@ -113,7 +114,8 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     feats_array_.reset(new PointCloudXYZI());
 
     ds_filter_surf_.setLeafSize(filter_size_matching_, filter_size_matching_, filter_size_matching_);
-    ds_filter_map_.setLeafSize(filter_size_tree_map_, filter_size_tree_map_, filter_size_tree_map_);
+    // 用以降采样生成pcd地图的去畸变后的点云
+    ds_filter_for_pcd_.setLeafSize(filter_size_for_pcd_, filter_size_for_pcd_, filter_size_for_pcd_);
 
     Lidar_T_wrt_IMU_<<VEC_FROM_ARRAY(extrinT_);
     Lidar_R_wrt_IMU_<<MAT_FROM_ARRAY(extrinR_);
@@ -141,9 +143,10 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
 
 //------------------------------------------------------------------------------------------------------
     sync_packages_timer_ = nh_.createTimer(::ros::Duration(0.001), &FastLIO::processDataPackages, this);
-    data_publisher_timer_ = nh_.createTimer(::ros::Duration(0.05), &FastLIO::publishData, this);
+    data_publisher_timer_ = nh_.createTimer(::ros::Duration(0.1), &FastLIO::publishData, this);
     map_refine_timer_ = nh_.createTimer(::ros::Duration(1.0), &FastLIO::mapCloudRefine, this);
 
+    flg_exit_ = false;
     signal(SIGINT, SigHandle);
 }
 
@@ -151,6 +154,8 @@ FastLIO::~FastLIO() {}
 
 void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
 {
+    if(flg_exit_) return;
+
     if(syncPackages(data_measures_)) {
         if (first_scan_flg_) {
             first_lidar_time_ = data_measures_.lidar_beg_time;
@@ -178,7 +183,7 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
 
         /*** initialize the map kdtree ***/
         if(ikdtree_vec_.empty() || ikdtree_vec_.front()->Root_Node == nullptr) {
-            if(feats_down_size_ > 5) {
+            if(feats_down_size_ > 0) {
                 ROS_INFO("/*** initialize the map kdtree ***/\n");
                 ikdtree_vec_.emplace_back(addIKdTree());
             }
@@ -205,15 +210,25 @@ void FastLIO::processDataPackages(const ::ros::TimerEvent& timer_event)
         geo_quat_.w = state_point_.rot.coeffs()[3];
 
         if (scan_count_ < 20 || compareStates()) {
+            /*** prepare for adding points to slam map ***/
+            PointCloudXYZI::Ptr laserCloudFullRes(dense_pub_en_ ? feats_undistort_ : feats_down_body_);
+            int size = laserCloudFullRes->points.size();
+            PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(size, 1));
+            for (int i = 0; i < size; i++) {
+                RGBpointBodyToWorld(&laserCloudFullRes->points[i], &laserCloudWorld->points[i]);
+            }
+            ds_filter_for_pcd_.setInputCloud(laserCloudWorld);
+            ds_filter_for_pcd_.filter(*laserCloudWorld);
+            points_world_ = laserCloudWorld;
+            map_point_mutex_.lock();
+            map_points_.push_back(points_world_);
+            map_point_mutex_.unlock();
+
             /*** add the feature points to map kdtree ***/
             mapIncrement();
             last_state_point_ = state_point_;
             last_lidar_end_time_ = lidar_end_time_;
             /*** Segment the map in lidar FOV ***/
-            // pool.detach_task([&]{
-            //     std::shared_ptr<FastLIO> fast_lio_instance = FastLIO::getInstance();
-            //     fast_lio_instance->mapFovUpdate();
-            // });
             mapFovUpdate();
         }
         ROS_DEBUG("Effctive feature number: %d\n", effct_feat_num_);
@@ -278,12 +293,7 @@ void FastLIO::publishData(const ::ros::TimerEvent& timer_event)
     if (path_en_) publishPath(path_pub_);
 
     /******* Publish points *******/
-    if (scan_pub_en_) {
-        if(++keyframe_pulse_cout_ > 5){
-            publishFrameWorld(cloud_full_pub_);
-            keyframe_pulse_cout_ = 0;
-        }
-    }
+    if (scan_pub_en_) publishFrameWorld(cloud_full_pub_);
     if (scan_pub_en_ && scan_body_pub_en_) publishFrameBody(body_cloud_full_pub_);
     // publishEffectWorld(cloud_effect_pub_);
 }
@@ -549,10 +559,10 @@ void FastLIO::mapIncrement()
         add_point_size_ = add_point_size_1 + add_point_size_2;
     }
 
-    addPointToPcl(points_world_, PointToAdd, PointNoNeedDownsample);
-    map_point_mutex_.lock();
-    map_points_.push_back(points_world_);
-    map_point_mutex_.unlock();
+    // addPointToPcl(points_world_, PointToAdd, PointNoNeedDownsample);
+    // map_point_mutex_.lock();
+    // map_points_.push_back(points_world_);
+    // map_point_mutex_.unlock();
 }
 
 void FastLIO::addPointToPcl(PointCloudXYZI::Ptr& pcl_points,
@@ -579,12 +589,14 @@ void FastLIO::standardPclCallback(const sensor_msgs::PointCloud2::ConstPtr &msg)
     }
 
     if(p_pre_->required_frame_num <= 1 || scan_count_ < 20) {
+        ROS_DEBUG("no cutting");
         PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
         p_pre_->process(msg, ptr);
         lidar_buffer_.emplace_back(ptr);
         time_buffer_.emplace_back(msg->header.stamp.toSec());
         last_timestamp_lidar_ = msg->header.stamp.toSec();
     } else {
+        ROS_DEBUG("cutting into %d.", p_pre_->required_frame_num);
         PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
         deque<PointCloudXYZI::Ptr> ptr_deque;
         deque<double> timestamp_lidar;
@@ -684,10 +696,9 @@ void FastLIO::publishFrameWorld(const ros::Publisher & cloud_full_pub_)
 {
     if(scan_pub_en_)
     {
-        PointCloudXYZI::Ptr laserCloudFullRes(dense_pub_en_ ? feats_undistort_ : feats_down_body_);
+        PointCloudXYZI::Ptr laserCloudFullRes(feats_down_body_);
         int size = laserCloudFullRes->points.size();
-        PointCloudXYZI::Ptr laserCloudWorld( \
-                        new PointCloudXYZI(size, 1));
+        PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(size, 1));
 
         for (int i = 0; i < size; i++)
         {
@@ -702,35 +713,6 @@ void FastLIO::publishFrameWorld(const ros::Publisher & cloud_full_pub_)
         cloud_full_pub_.publish(laserCloudmsg);
         publish_count_ -= PUBFRAME_PERIOD;
     }
-
-    // /**************** save map ****************/
-    // /* 1. make sure you have enough memories
-    // /* 2. noted that pcd save will influence the real-time performences **/
-    // if (pcd_save_en_)
-    // {
-    //     int size = feats_undistort_->points.size();
-    //     PointCloudXYZI::Ptr laserCloudWorld( \
-    //                     new PointCloudXYZI(size, 1));
-
-    //     for (int i = 0; i < size; i++)
-    //     {
-    //         RGBpointBodyToWorld(&feats_undistort_->points[i], \
-    //                             &laserCloudWorld->points[i]);
-    //     }
-    //     *pcl_wait_save_ += *laserCloudWorld;
-
-    //     static int scan_wait_num = 0;
-    //     scan_wait_num ++;
-    //     if (pcl_wait_save_->size() > 0 && pcd_save_interval_ > 0  && scan_wait_num >= pcd_save_interval_)
-    //     {
-    //         pcd_index_ ++;
-    //         string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index_) + string(".pcd"));
-    //         pcl::PCDWriter pcd_writer;
-    //         pcd_writer.writeBinary(all_points_dir, *pcl_wait_save_);
-    //         pcl_wait_save_->clear();
-    //         scan_wait_num = 0;
-    //     }
-    // }
 }
 
 void FastLIO::publishFrameBody(const ros::Publisher & body_cloud_full_pub_)

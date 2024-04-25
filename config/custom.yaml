@@ -54,8 +54,9 @@ mapping:
     #     0.007560, 0.999965, -0.003615,
     #     0.009530, 0.003543, 0.999948]
 
-    filter_size_matching: 0.3
-    filter_size_tree_map: 0.2
+    filter_size_matching: 0.5
+    filter_size_tree_map: 0.5
+    filter_size_for_pcd: 0.1
 
     max_num_residuals: 600
     min_num_residuals: 0
@@ -63,7 +64,7 @@ mapping:
 publish:
     path_en_:  true
     scan_publish_en:  true       # false: close all the point cloud output
-    dense_publish_en: false       # false: low down the points number in a global-frame point clouds scan.
+    dense_publish_en: true       # false: low down the points number in a global-frame point clouds scan.
     scan_bodyframe_pub_en: false  # true: output the point cloud scans in IMU-body-frame
 
 pcd_save:

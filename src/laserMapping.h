@@ -133,6 +133,7 @@ private:
     BS::thread_pool pool{15};
 
 public:
+    bool flg_exit_ = false;
     condition_variable sig_buffer_;
     std::deque<std::shared_ptr<KD_TREE<PointType>>> ikdtree_vec_;
     std::shared_ptr<KD_TREE<PointType>> ikdtree_ = std::make_shared<KD_TREE<PointType>>();
@@ -151,8 +152,8 @@ public:
     int scan_count_ = 0;
     int publish_count_ = 0;
     double kdtree_incremental_time_ = 0.0, kdtree_delete_time_ = 0.0;
-    int    kdtree_size_st_ = 0, kdtree_size_end_ = 0, add_point_size_ = 0, kdtree_delete_counter_ = 0;
-    bool   runtime_pos_log_ = false, pcd_save_en_ = false, time_sync_en_ = false;
+    int  kdtree_size_st_ = 0, kdtree_size_end_ = 0, add_point_size_ = 0, kdtree_delete_counter_ = 0;
+    bool runtime_pos_log_ = false, pcd_save_en_ = false, time_sync_en_ = false;
     bool path_en_ = true;
     // /**************************/
 
@@ -194,10 +195,10 @@ public:
 
     // LiDAR Preprocess DS Params  
     pcl::VoxelGrid<PointType> ds_filter_surf_;
-    pcl::VoxelGrid<PointType> ds_filter_map_;  
-    double filter_size_matching_ = 0;
-    double filter_size_tree_map_ = 0;
-    double lidar_mean_scantime_ = 0.0;
+    pcl::VoxelGrid<PointType> ds_filter_for_pcd_;  
+    double filter_size_for_pcd_;
+    double filter_size_matching_;
+    double filter_size_tree_map_;
     int    scan_num_ = 0;
 
     // // Preprocess & IMU Process pointer
@@ -343,6 +344,8 @@ void SigHandle(int sig)
     // 会唤醒所有等待队列中阻塞的线程 线程被唤醒后，会通过轮询方式获得锁，获得锁前也一直处理运行状态，不会被再次阻塞。
     fast_lio_instance->sig_buffer_.notify_all();
     fast_lio_instance->savePcd();
+
+    fast_lio_instance->flg_exit_ = true;
 }
 
 //计算残差信息
