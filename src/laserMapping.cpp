@@ -102,6 +102,10 @@ FastLIO::FastLIO(ros::NodeHandle nh) : nh_(nh), p_pre_(std::make_shared<Preproce
     path_.header.stamp    = ros::Time::now();
     path_.header.frame_id ="camera_init";
 
+    // 验证ikdtree reconstruct 方法的效率，是否存在大的耗时
+    // submap_accumulation_num_ = 0;
+    // accumulated_submap_cloud_.reset(new PointCloudXYZI());
+
     points_world_.reset(new PointCloudXYZI());
     accumulated_cloud_.reset(new PointCloudXYZI());
     feats_from_map_.reset(new PointCloudXYZI());
@@ -303,10 +307,24 @@ void FastLIO::mapCloudRefine(const ::ros::TimerEvent& timer_event)
     // reset
     accumulated_cloud_.reset(new PointCloudXYZI());
 
+    // 验证ikdtree reconstruct 方法的效率，是否存在大的耗时
+    // if(submap_accumulation_num_ > 240 && accumulated_submap_cloud_->points.size() > 2000) {
+    //     submap_accumulation_num_ = 0;
+    //     for (auto& ikdtree : ikdtree_vec_) {
+    //         ikdtree->reconstruct(accumulated_submap_cloud_->points);
+    //     }
+    //     accumulated_submap_cloud_.reset(new PointCloudXYZI());
+    // }
+
     // sample points
     map_point_mutex_.lock();
     for (auto cloud : map_points_) {
         *accumulated_cloud_ += *cloud;
+
+        // // 验证ikdtree reconstruct 方法的效率，是否存在大的耗时
+        // *accumulated_submap_cloud_ += *cloud;
+        // submap_accumulation_num_++;
+
         cloud->clear();
     }
     map_points_.clear();

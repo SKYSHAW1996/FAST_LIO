@@ -609,6 +609,25 @@ void KD_TREE<PointType>::acquire_removed_points(PointVector & removed_points){
     return;
 }
 
+/**
+ * @brief 删除当前所有的点云缓存，根据输入的点云，重新构造ikdtree
+ * @param point_cloud 输入的点云
+ */
+template <typename PointType>
+void KD_TREE<PointType>::reconstruct(PointVector point_cloud){
+    Delete_Storage_Disabled = true;
+    delete_tree_nodes(&Root_Node);
+    PointVector ().swap(PCL_Storage);
+    Rebuild_Logger.clear();           
+
+    if(Root_Node == nullptr){
+        Build(point_cloud);
+    } else {
+        Add_Points(point_cloud, true);
+    }
+    printf("reconstruct ikdtree. \n"); 
+}
+
 //  工具属性，构建新的(sub)tree；这里的双指针形参很重要，能够允许我们传入一个空指针。
 template <typename PointType>
 void KD_TREE<PointType>::BuildTree(KD_TREE_NODE ** root, int l, int r, PointVector & Storage){

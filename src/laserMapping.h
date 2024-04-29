@@ -258,6 +258,10 @@ public:
     V3D Lidar_T_wrt_IMU_{Zero3d};
     M3D Lidar_R_wrt_IMU_{Eye3d};
 
+     // 验证ikdtree reconstruct 方法的效率，是否存在大的耗时
+    // int submap_accumulation_num_ = 0;
+    // PointCloudXYZI::Ptr accumulated_submap_cloud_;
+
     std::vector<PointCloudXYZI::Ptr> map_points_;
     PointCloudXYZI::Ptr points_world_;
     PointCloudXYZI::Ptr accumulated_cloud_;
