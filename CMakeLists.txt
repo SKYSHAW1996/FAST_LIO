@@ -77,15 +77,15 @@ link_directories(
   /usr/local/PCL19/lib
 )
 
-add_message_files(
-  FILES
-  Pose6D.msg
-)
+# add_message_files(
+#   FILES
+#   Pose6D.msg
+# )
 
-generate_messages(
- DEPENDENCIES
- geometry_msgs
-)
+# generate_messages(
+#  DEPENDENCIES
+#  geometry_msgs
+# )
 
 catkin_package(
   CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs message_runtime
